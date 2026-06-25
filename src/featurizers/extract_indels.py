@@ -4,8 +4,8 @@ import matplotlib.image as img
 import matplotlib.pyplot as plt
 from multiprocessing import Process
 import numpy as np
-import os
 import pandas as pd
+from pathlib import Path
 import pysam
 import re
 from typing import Literal
@@ -17,10 +17,11 @@ SignatureTuple = tuple[int, int, str]
 
 
 def parse_vcf_file(vcf_file: str, chromosome: str) -> list[VariantTuple]:
-    with open(vcf_file, "r") as file:
+    """Parse variants for one chromosome from a VCF-like file."""
+
+    with open(vcf_file, "r", encoding="utf-8") as file:
         contents = file.readlines()
 
-        # chromosome_filter is a list of sigs of the form [(chromosome_number, start_position, length)]
         chromosome_filter = [
             line for line in contents if line[0 : line.find("\t")] == chromosome
         ]
@@ -46,12 +47,13 @@ def fetch_split_alignments(
     duplication_factor: int = 2,
     variant_cap: int = 100000,
 ) -> list[SignatureTuple]:
+    """Fetch split-read insertion or deletion signatures from duplicate reads."""
+
     duplicate_reads = {}
     signatures = []
 
     sam_file, indexed_sam_file = cache
 
-    # fetch duplicate reads in BAM / SAM file
     for read in sam_file.fetch(chromosome, until_eof=True):
         duplicate_reads[read.query_name] = duplicate_reads.get(read.query_name, 0) + 1
 
@@ -64,9 +66,7 @@ def fetch_split_alignments(
             for read in reads:
                 bias = 0
                 for cigar in read.cigartuples:
-                    if (
-                        cigar[0] == 0 or cigar[0] == 2 or cigar[0] == 7 or cigar[0] == 8
-                    ):  # M or D or = or X
+                    if cigar[0] == 0 or cigar[0] == 2 or cigar[0] == 7 or cigar[0] == 8:
                         bias += cigar[1]
 
                 orientation = "+" if read.is_forward else "-"
@@ -86,18 +86,15 @@ def fetch_split_alignments(
                 first_segment = points_of_interest[index]
                 second_segment = points_of_interest[index + 1]
 
-                # do the reads have the same orientation / are on the same chromosome?
                 if (
                     first_segment[4] == second_segment[4]
                     and first_segment[5] == second_segment[5] == chromosome
                 ):
-                    # utilize heuristic for identifying deletion / insertion signatures
                     difference_distance = (second_segment[0] - first_segment[1]) - (
                         second_segment[2] - first_segment[3]
                     )
                     difference_overlap = first_segment[1] - second_segment[0]
 
-                    # compose deletion signature as identified by split alignment
                     if variant_type == "DEL":
                         if (
                             difference_overlap < 30
@@ -107,7 +104,6 @@ def fetch_split_alignments(
                                 (first_segment[1], difference_distance, read_name)
                             )
 
-                    # compose insertion signature as identified by split alignment
                     elif variant_type == "INS":
                         if (
                             difference_overlap < 30
@@ -134,7 +130,8 @@ def intra_alignment_extraction(
     variant: VariantTuple | None = None,
     extension: int = 50,
 ) -> None:
-    # if user supplies VCF file, parse signature contents (defined below)
+    """Extract intra-alignment signatures overlapping one variant."""
+
     if variant:
         chromosome = variant[0]
         variant_start_position = variant[1]
@@ -154,24 +151,21 @@ def intra_alignment_extraction(
         sam_file = pysam.AlignmentFile(bam_file, "rb")
 
         for read in sam_file.fetch(chromosome, until_eof=True):
-            # get start and end position of aligned reads relative to the reference
             read_start = read.reference_start
             read_end = read_start + read.query_length
 
-            # check for overlap between read and proposed variant in VCF file
             if max(read_start, variant_start_position) <= min(
                 read_end, variant_end_position
             ):
                 current_read_position = read_start
                 cigar_string = read.cigartuples
 
-                for op, length in cigar_string:
+                for operation, length in cigar_string:
                     if variant_type == "DEL":
-                        if op == 0:  # "M"
+                        if operation == 0:
                             current_read_position += length
 
-                        elif op == 2:  # "D"
-                            # check for overlap between CIGAR deletion and proposed variant in VCF file
+                        elif operation == 2:
                             if max(
                                 current_read_position,
                                 variant_start_position - extension,
@@ -195,10 +189,10 @@ def intra_alignment_extraction(
                             current_read_position += length
 
                     elif variant_type == "INS":
-                        if op == 0:  # "M"
+                        if operation == 0:
                             current_read_position += length
 
-                        elif op == 1:  # "I"
+                        elif operation == 1:
                             if max(
                                 current_read_position,
                                 variant_start_position - extension,
@@ -221,7 +215,7 @@ def intra_alignment_extraction(
 
                             current_read_position += length
 
-                        elif op == 2:  # "D"
+                        elif operation == 2:
                             current_read_position += length
 
                     else:
@@ -240,6 +234,8 @@ def inter_alignment_extraction(
     variant: VariantTuple,
     extension: int = 50,
 ) -> None:
+    """Append split-read inter-alignment signatures for one variant."""
+
     chromosome = variant[0]
     variant_start_position = variant[1]
     variant_end_position = variant[1] + variant[2]
@@ -255,7 +251,6 @@ def inter_alignment_extraction(
     for signature in split_read_signatures:
         signature_interval = (signature[0], signature[0] + signature[1])
 
-        # determine whether variant and signature intervals overlap
         if max(variant_start_position - extension, signature_interval[0]) <= min(
             variant_end_position + extension, signature_interval[1]
         ):
@@ -281,6 +276,8 @@ def visualize_alignments(
     bed: str,
     variant: VariantTuple,
 ) -> None:
+    """Visualize read alignments around one variant."""
+
     chromosome = variant[0]
     variant_start_position = variant[1]
     variant_end_position = variant[1] + variant[2]
@@ -328,13 +325,21 @@ def encode_variant_as_matrix(
     normalized_height: int = 60,
     extension: int = 50,
 ) -> np.ndarray:
+    """Encode one variant's signature BED rows as a matrix."""
+
     variant_matrix = {}
 
     chromosome = variant[0]
     variant_start_position = variant[1]
     variant_end_position = variant[1] + variant[2]
 
-    def vectorize(read_start, read_end, extraction):
+    def vectorize(
+        read_start: int,
+        read_end: int,
+        extraction: str,
+    ) -> list[int]:
+        """Vectorize one extracted read signature."""
+
         read_vector = [0] * (
             (variant_end_position - variant_start_position) + 2 * extension
         )
@@ -362,7 +367,7 @@ def encode_variant_as_matrix(
         ),
         "r",
     ) as bed_file:
-        _ = bed_file.readline()  # ignore BED header information
+        _ = bed_file.readline()
 
         for read in bed_file:
             read = read.split("\t")
@@ -444,6 +449,8 @@ def generate_encoding(
     variant: VariantTuple,
     encoding_format: Literal["counts", "plot"],
 ) -> None:
+    """Write a matrix or plot representation for one encoded variant."""
+
     chromosome = variant[0]
     variant_start_position = variant[1]
     variant_end_position = variant[1] + variant[2]
@@ -510,17 +517,18 @@ def generate_encoding(
 
 
 def parse_arguments() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     # fmt: off
     parser = argparse.ArgumentParser(description="insertion & deletion signature extraction using CUTE-SV heuristics")
-
-    parser.add_argument("-b", "--bam", default="data/HG002_chr21.bam", help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)")
+    parser.add_argument("-b", "--bam", dest="bam_file", default="data/HG002_chr21.bam", help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)")
     parser.add_argument("-c", "--chromosomes", default="chr21", help="limits signature extraction to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)")
     parser.add_argument("-d", "--bed", default="output/bed", help="output BED directory (default: output/bed)")
-    parser.add_argument("-f", "--format", default="counts", choices=["counts", "plot"], help="model input options (default: counts)")
+    parser.add_argument("-f", "--format", dest="encoding_format", default="counts", choices=["counts", "plot"], help="model input options (default: counts)")
     parser.add_argument("-i", "--images", default="output/images", help="output image directory (default: output/images)")
     parser.add_argument("-n", "--normalize", action="store_true", help="normalize matrices to a fixed width and height")
-    parser.add_argument("-t", "--type", default="DEL", choices=["DEL", "INS"], help="structural variant type (default: DEL)")
-    parser.add_argument("-v", "--vcf", default="data/labeling_test/HG002_variants.vcf", help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)")
+    parser.add_argument("-t", "--type", dest="variant_type", default="DEL", choices=["DEL", "INS"], help="structural variant type (default: DEL)")
+    parser.add_argument("-v", "--vcf", dest="variant_file_path", default="data/labeling_test/HG002_variants.vcf", help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)")
     # fmt: on
 
     return parser.parse_args()
@@ -536,18 +544,20 @@ def launch_chromosome_extraction(
     normalize: bool,
     encoding_format: Literal["counts", "plot"] = "counts",
 ) -> None:
+    """Extract CUTE-SV-style signatures for one chromosome."""
+
     sam_file = pysam.AlignmentFile(bam_file, "rb")
     indexed_sam_file = pysam.IndexedReads(sam_file)
     indexed_sam_file.build()
 
     cache = [sam_file, indexed_sam_file]
 
-    bed = os.path.join(base_bed, chromosome)
-    images = os.path.join(base_images, chromosome)
+    bed = Path(base_bed) / chromosome
+    images = Path(base_images) / chromosome
 
-    os.makedirs(bed, exist_ok=True)
-    os.makedirs(os.path.join(images, "matrices"), exist_ok=True)
-    os.makedirs(os.path.join(images, "signatures"), exist_ok=True)
+    bed.mkdir(parents=True, exist_ok=True)
+    (images / "matrices").mkdir(parents=True, exist_ok=True)
+    (images / "signatures").mkdir(parents=True, exist_ok=True)
 
     variants = parse_vcf_file(vcf_file, chromosome)
     split_read_signatures = fetch_split_alignments(variant_type, chromosome, cache)
@@ -559,32 +569,36 @@ def launch_chromosome_extraction(
             )
         )
 
-        intra_alignment_extraction(variant_type, bam_file, bed, variant)
-        inter_alignment_extraction(variant_type, split_read_signatures, bed, variant)
-        visualize_alignments(variant_type, images, bed, variant)
+        intra_alignment_extraction(variant_type, bam_file, str(bed), variant)
+        inter_alignment_extraction(
+            variant_type, split_read_signatures, str(bed), variant
+        )
+        visualize_alignments(variant_type, str(images), str(bed), variant)
         generate_encoding(
-            images,
-            encode_variant_as_matrix(variant_type, bed, variant, normalize),
+            str(images),
+            encode_variant_as_matrix(variant_type, str(bed), variant, normalize),
             variant,
             encoding_format,
         )
 
 
 def main() -> None:
-    args = parse_arguments()
+    """Run CUTE-SV-style signature extraction."""
 
-    bam_file = args.bam
+    arguments = parse_arguments()
+
+    bam_file = arguments.bam_file
     chromosomes = (
         ["chr{}".format(chromosome_number) for chromosome_number in range(1, 23)]
-        if args.chromosomes == "all"
-        else args.chromosomes.split(",")
+        if arguments.chromosomes == "all"
+        else arguments.chromosomes.split(",")
     )
-    base_bed = args.bed
-    encoding_format = args.format
-    base_images = args.images
-    variant_type = args.type
-    vcf_file = args.vcf
-    normalize = args.normalize
+    base_bed = arguments.bed
+    encoding_format = arguments.encoding_format
+    base_images = arguments.images
+    variant_type = arguments.variant_type
+    vcf_file = arguments.variant_file_path
+    normalize = arguments.normalize
 
     chromosome_processes = []
     for chromosome in chromosomes:

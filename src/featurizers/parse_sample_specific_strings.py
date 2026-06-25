@@ -2,17 +2,22 @@ import argparse
 import ast
 import matplotlib
 import matplotlib.pyplot as plt
-import os
 import pandas as pd
 import re
+from pathlib import Path
 
 matplotlib.use("agg")
 
 
-def generate_index_file(fragments):
+def generate_index_file(fragments: str) -> None:
+    """Generate an offset index for a sample-specific-signature file."""
+
     output_file = fragments.replace("txt", "index")
 
-    with open(fragments, "r") as source, open(output_file, "w") as destination:
+    with (
+        open(fragments, "r", encoding="utf-8") as source,
+        open(output_file, "w", encoding="utf-8") as destination,
+    ):
         buffer = ("", 0)
 
         while signature := source.readline():
@@ -31,23 +36,32 @@ def generate_index_file(fragments):
         destination.write("{}\t{}\t{}\n".format(buffer[0], buffer[1], source.tell()))
 
 
-def gather_SFS_signatures(bed, fragments, offsets, signatures, extension=50):
-    destination = os.path.join(fragments, os.path.basename(bed))
+def gather_sample_specific_signatures(
+    bed: str,
+    fragments: str,
+    offsets: pd.DataFrame,
+    signatures: str,
+    extension: int = 50,
+) -> None:
+    """Gather sample-specific signatures overlapping one variant BED file."""
 
-    variant = os.path.splitext(os.path.basename(bed))[0].split("_")
+    bed_path = Path(bed)
+    destination = Path(fragments) / bed_path.name
+
+    variant = bed_path.stem.split("_")
     variant_start_position = int(variant[1])
     variant_end_position = int(variant[2])
 
     with (
-        open(bed, "r") as bed_file,
-        open(signatures, "r") as signatures_file,
-        open(destination, "w") as fragments_file,
+        open(bed, "r", encoding="utf-8") as bed_file,
+        open(signatures, "r", encoding="utf-8") as signatures_file,
+        destination.open("w", encoding="utf-8") as fragments_file,
     ):
-        _ = bed_file.readline()  # ignore BED header information
+        _ = bed_file.readline()
 
         fragments_file.write(
             "{}\t{}\t{}\t{}\t{}\n".format("CHROMOSOME", "START", "END", "READ", "TYPE")
-        )  # write header to fragments file
+        )
 
         reads_encountered = set()
 
@@ -69,18 +83,14 @@ def gather_SFS_signatures(bed, fragments, offsets, signatures, extension=50):
                     ]
 
                     if len(tuples) >= 2:
-                        for reference_tuple in tuples[
-                            1:
-                        ]:  # of the form (chromosome, reference_start, reference_end)
-                            if (
-                                all(reference_tuple) and reference_tuple[0] == read[0]
-                            ):  # do chromosome locations match?
+                        for reference_tuple in tuples[1:]:
+                            if all(reference_tuple) and reference_tuple[0] == read[0]:
                                 if max(
                                     reference_tuple[1],
                                     variant_start_position - extension,
                                 ) <= min(
                                     reference_tuple[2], variant_end_position + extension
-                                ):  # only capture overlapping fragments (+/- extension)
+                                ):
                                     fragments_file.write(
                                         "{}\t{}\t{}\t{}\t{}\n".format(
                                             read[0],
@@ -94,8 +104,12 @@ def gather_SFS_signatures(bed, fragments, offsets, signatures, extension=50):
                 reads_encountered.add(read[3])
 
 
-def visualize_fragments(fragments_file, images):
-    variant = os.path.splitext(os.path.basename(fragments_file))[0].split("_")
+def visualize_fragments(fragments_file: str, images: str) -> None:
+    """Write signature-alignment and fragment-length plots for one variant."""
+
+    fragments_path = Path(fragments_file)
+    images_path = Path(images)
+    variant = fragments_path.stem.split("_")
 
     chromosome = variant[0]
     variant_start_position = int(variant[1])
@@ -105,7 +119,9 @@ def visualize_fragments(fragments_file, images):
     fragments["HEIGHT"] = fragments.groupby("READ").ngroup() + 2
     fragments["LENGTH"] = fragments["END"] - fragments["START"]
 
-    def plot_signature_alignment():
+    def plot_signature_alignment() -> None:
+        """Plot SFS alignments around the variant."""
+
         plt.plot([variant_start_position, variant_end_position], [1, 1], color="blue")
         for _, row in fragments.iterrows():
             plt.plot(
@@ -118,16 +134,17 @@ def visualize_fragments(fragments_file, images):
 
         plt.tight_layout()
         plt.savefig(
-            os.path.join(
-                images,
-                "signatures/{}_{}_{}.png".format(
-                    chromosome, variant_start_position, variant_end_position
-                ),
+            images_path
+            / "signatures"
+            / "{}_{}_{}.png".format(
+                chromosome, variant_start_position, variant_end_position
             )
         )
         plt.clf()
 
-    def plot_SFS_distribution():
+    def plot_sample_specific_signature_distribution() -> None:
+        """Plot the SFS fragment-length distribution."""
+
         fragments["LENGTH"].plot.hist()
 
         plt.xlabel("length")
@@ -135,41 +152,51 @@ def visualize_fragments(fragments_file, images):
 
         plt.tight_layout()
         plt.savefig(
-            os.path.join(
-                images,
-                "distributions/{}_{}_{}.png".format(
-                    chromosome, variant_start_position, variant_end_position
-                ),
+            images_path
+            / "distributions"
+            / "{}_{}_{}.png".format(
+                chromosome, variant_start_position, variant_end_position
             )
         )
         plt.clf()
 
     plot_signature_alignment()
-    plot_SFS_distribution()
+    plot_sample_specific_signature_distribution()
 
 
 def launch_chromosome_analysis(
-    chromosome, base_bed, base_images, base_fragments, offsets, signatures
-):
-    bed = os.path.join(base_bed, chromosome)
-    images = os.path.join(base_images, chromosome)
-    fragments = os.path.join(base_fragments, chromosome)
+    chromosome: str,
+    base_bed: str,
+    base_images: str,
+    base_fragments: str,
+    offsets: pd.DataFrame,
+    signatures: str,
+) -> None:
+    """Run sample-specific-signature analysis for one chromosome."""
 
-    os.makedirs(os.path.join(images, "signatures"), exist_ok=True)
-    os.makedirs(os.path.join(images, "distributions"), exist_ok=True)
-    os.makedirs(fragments, exist_ok=True)
+    bed = Path(base_bed) / chromosome
+    images = Path(base_images) / chromosome
+    fragments = Path(base_fragments) / chromosome
 
-    for bed_file in os.listdir(bed):
-        gather_SFS_signatures(
-            os.path.join(bed, bed_file), fragments, offsets, signatures
+    (images / "signatures").mkdir(parents=True, exist_ok=True)
+    (images / "distributions").mkdir(parents=True, exist_ok=True)
+    fragments.mkdir(parents=True, exist_ok=True)
+
+    for bed_file in bed.iterdir():
+        gather_sample_specific_signatures(
+            str(bed_file),
+            str(fragments),
+            offsets,
+            signatures,
         )
-        visualize_fragments(os.path.join(fragments, bed_file), images)
+        visualize_fragments(str(fragments / bed_file.name), str(images))
 
 
-def parse_args():
+def parse_arguments() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     # fmt: off
     parser = argparse.ArgumentParser(description="sample-specific string (SFS) analysis")
-
     parser.add_argument("-c", "--chromosomes", default="chr21", help="limits SFS analysis to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)")
     parser.add_argument("-d", "--bed", default="data/bed", help="path to variant BED directory (default: data/bed)")
     parser.add_argument("-f", "--fragments", default="data/fragments", help="output location for SFS binned by chromosomal variant (default: data/fragments)")
@@ -181,23 +208,25 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
+def main() -> None:
+    """Run sample-specific-signature analysis."""
+
+    arguments = parse_arguments()
     chromosomes = (
         ["chr{}".format(chromosome_number) for chromosome_number in range(1, 23)]
-        if args.chromosomes == "all"
-        else args.chromosomes.split(",")
+        if arguments.chromosomes == "all"
+        else arguments.chromosomes.split(",")
     )
-    base_bed = args.bed
-    base_fragments = args.fragments
-    generate_index = args.generate_index
-    base_images = args.images
-    signatures = args.signatures
+    base_bed = arguments.bed
+    base_fragments = arguments.fragments
+    generate_index = arguments.generate_index
+    base_images = arguments.images
+    signatures = arguments.signatures
 
     if generate_index:
         generate_index_file(signatures)
 
-    if os.path.exists(signatures.replace("txt", "index")):
+    if Path(signatures.replace("txt", "index")).exists():
         offsets = pd.read_csv(
             signatures.replace("txt", "index"),
             delimiter="\t",
