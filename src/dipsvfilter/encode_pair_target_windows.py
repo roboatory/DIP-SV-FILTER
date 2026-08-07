@@ -162,6 +162,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Regenerate pair output directories even if windows.tsv already exists.",
     )
+    parser.add_argument(
+        "--no-assigned-depth-normalization",
+        action="store_true",
+        help=(
+            "Disable non-self pair depth normalization. By default, each assigned "
+            "haplotype matrix is scaled by total_assigned_reads / hap_assigned_reads "
+            "to better match full-depth training matrices."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -499,13 +508,22 @@ def build_target_windows(
         end = start + window_size
         focus_mask = [0] * subwindow_count
         sv_to_subwindows: Dict[str, List[int]] = defaultdict(list)
-        for index in range(subwindow_count):
-            sub_start = start + index * subwindow_size
-            sub_end = sub_start + subwindow_size
-            for interval in intervals:
+        for interval in intervals:
+            focused_indices = []
+            for index in range(subwindow_count):
+                sub_start = start + index * subwindow_size
+                sub_end = sub_start + subwindow_size
                 if sub_end > interval.start and sub_start < interval.end:
-                    focus_mask[index] = 1
-                    sv_to_subwindows[interval.sv_id].append(index)
+                    focused_indices.append(index)
+
+            if interval.end - interval.start == 1 and focused_indices:
+                anchor_index = focused_indices[0]
+                if anchor_index > 0:
+                    focused_indices.append(anchor_index - 1)
+
+            for index in sorted(set(focused_indices)):
+                focus_mask[index] = 1
+                sv_to_subwindows[interval.sv_id].append(index)
 
         if any(focus_mask):
             windows.append(
@@ -529,6 +547,48 @@ def safe_pair_dir_name(pair: PairInfo) -> str:
     return f"{pair.rank:02d}_{pair.hap1_id}__{pair.hap2_id}"
 
 
+
+
+def scale_count_depth_channels(feature: np.ndarray, scale: float) -> np.ndarray:
+    """Scale log-normalized count/depth channels by a positive factor."""
+
+    if scale <= 0:
+        raise ValueError("Depth normalization scale must be positive")
+    if scale == 1:
+        return feature
+
+    scaled = feature.copy()
+    count_channels = (0, 1, 2, 3, 8)
+    for channel in count_channels:
+        raw_values = np.expm1(scaled[:, channel])
+        scaled[:, channel] = np.log1p(raw_values * scale)
+    return scaled
+
+
+def assigned_depth_scales(
+    pair: PairInfo,
+    assigned: AssignedPairRecords,
+    normalize: bool,
+) -> Dict[str, float]:
+    """Return per-haplotype depth scaling factors for one assigned pair."""
+
+    if not normalize or pair.hap1_id == pair.hap2_id:
+        return {pair.hap1_id: 1.0}
+    if assigned.reads_assigned_hap1 is None or assigned.reads_assigned_hap2 is None:
+        return {pair.hap1_id: 1.0, pair.hap2_id: 1.0}
+
+    hap1_count = assigned.reads_assigned_hap1
+    hap2_count = assigned.reads_assigned_hap2
+    total = hap1_count + hap2_count
+    if total <= 0:
+        return {pair.hap1_id: 1.0, pair.hap2_id: 1.0}
+
+    return {
+        pair.hap1_id: total / hap1_count if hap1_count > 0 else 1.0,
+        pair.hap2_id: total / hap2_count if hap2_count > 0 else 1.0,
+    }
+
+
 def encode_pair_windows(
     cluster_name: str,
     pair: PairInfo,
@@ -539,6 +599,7 @@ def encode_pair_windows(
     subwindow_size: int,
     merge_distance: int,
     long_group_stride: int,
+    normalize_assigned_depth: bool,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     """Encode all target windows for one pair."""
 
@@ -548,10 +609,12 @@ def encode_pair_windows(
     window_rows: List[Dict[str, object]] = []
     focus_rows: List[Dict[str, object]] = []
     hap_ids = [pair.hap1_id] if pair.hap1_id == pair.hap2_id else [pair.hap1_id, pair.hap2_id]
+    depth_scales = assigned_depth_scales(pair, assigned, normalize_assigned_depth)
 
     for hap_id in hap_ids:
         hap = haplotypes[hap_id]
         records = assigned.records_by_hap.get(hap_id, [])
+        depth_scale = depth_scales.get(hap_id, 1.0)
         target_windows = build_target_windows(
             hap.sv_intervals,
             hap.length,
@@ -563,6 +626,7 @@ def encode_pair_windows(
 
         for window in target_windows:
             feature = encode_records(records, window.start, window.end, contig=hap.contig_name)
+            feature = scale_count_depth_channels(feature, depth_scale)
             feature_name = f"{hap_id}_{window.start}_{window.end}.npy"
             feature_path = feature_dir / feature_name
             np.save(feature_path, feature)
@@ -582,6 +646,7 @@ def encode_pair_windows(
                     "focus_mask": ",".join(str(value) for value in window.focus_mask),
                     "overlap_sv_ids": ";".join(overlap_sv_ids),
                     "num_records_encoded": len(records),
+                    "depth_scale": f"{depth_scale:.6f}",
                     "self_pair": str(pair.hap1_id == pair.hap2_id).lower(),
                 }
             )
@@ -625,11 +690,6 @@ def process_cluster(
     if missing_haps:
         raise ValueError(f"{cluster_dir.name}: retained pairs reference missing haplotypes: {missing_haps}")
 
-    alignment_data = {
-        hap_id: load_hap_alignment_data(haplotypes[hap_id])
-        for hap_id in required_haps
-    }
-
     pair_count = 0
     feature_count = 0
     skipped_pairs = 0
@@ -643,12 +703,15 @@ def process_cluster(
         pair_dir.mkdir(parents=True, exist_ok=True)
 
         if pair.hap1_id == pair.hap2_id:
-            assigned = self_pair_records(pair, alignment_data[pair.hap1_id])
+            hap_data = load_hap_alignment_data(haplotypes[pair.hap1_id])
+            assigned = self_pair_records(pair, hap_data)
         else:
+            hap1_data = load_hap_alignment_data(haplotypes[pair.hap1_id])
+            hap2_data = load_hap_alignment_data(haplotypes[pair.hap2_id])
             assigned = assign_pair_records(
                 pair,
-                alignment_data[pair.hap1_id],
-                alignment_data[pair.hap2_id],
+                hap1_data,
+                hap2_data,
                 cluster_read_names,
             )
 
@@ -662,6 +725,7 @@ def process_cluster(
             args.subwindow_size,
             args.merge_distance,
             args.long_group_stride,
+            not args.no_assigned_depth_normalization,
         )
         write_tsv(
             pair_dir / "windows.tsv",
@@ -679,6 +743,7 @@ def process_cluster(
                 "focus_mask",
                 "overlap_sv_ids",
                 "num_records_encoded",
+                "depth_scale",
                 "self_pair",
             ),
         )
@@ -805,6 +870,7 @@ def main() -> None:
     print(f"Cluster root: {cluster_root}")
     print(f"Clusters: {len(cluster_dirs)}")
     print(f"Cluster-level threads: {args.threads}")
+    print(f"Assigned-depth normalization: {not args.no_assigned_depth_normalization}")
 
     if not cluster_dirs:
         print("No clusters found.")

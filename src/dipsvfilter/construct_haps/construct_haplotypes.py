@@ -12,8 +12,8 @@
 # - FASTA headers use pipe-delimited fields for haplotype-specific information:
 #   SVs=sv_id:start-end;...|GT=gt1:gt2.
 #   Coordinates are 0-based, half-open positions on the constructed sequence.
-#   Active SVs use their full allele interval; inactive SVs use a one-base
-#   anchor at their projected reference location.
+#   Every SV uses the interval occupied by its selected allele. Active SVs use
+#   their written ALT interval; inactive SVs use the projected REF interval.
 
 # TODO: add methods to handle sequence collisions (different SV genotypes, but representing/generating the same sequence)
 
@@ -105,6 +105,28 @@ class SVCluster:
         anchor_start = min(max(position, 0), sequence_length - 1)
         return anchor_start, anchor_start + 1
 
+    def project_ref_interval(
+        self,
+        ref_start,
+        ref_end,
+        active_mappings,
+        cluster_start,
+        sequence_length,
+    ):
+        """Project a retained REF allele interval onto the haplotype sequence."""
+
+        seq_start = self.project_ref_boundary(
+            ref_start, active_mappings, cluster_start, "start"
+        )
+        seq_end = self.project_ref_boundary(
+            ref_end, active_mappings, cluster_start, "end"
+        )
+        seq_start = min(max(seq_start, 0), sequence_length)
+        seq_end = min(max(seq_end, 0), sequence_length)
+        if seq_end <= seq_start:
+            return self.one_base_anchor(seq_start, sequence_length)
+        return seq_start, seq_end
+
     def build_haplotype_sequence(self, cluster_start, cluster_end, hap_gt):
         hap_bps = [self.bps[i] for i in range(len(hap_gt)) if hap_gt[i] != 0]
         hap_seqs = [self.alleles[i][hap_gt[i]] for i in range(len(hap_gt)) if hap_gt[i] != 0]
@@ -113,8 +135,14 @@ class SVCluster:
         if len(hap_bps) == 0:
             seq = get_ref(SVCluster.ref, SVCluster.fai_dict, self.chrom, cluster_start, cluster_end)
             sv_intervals = []
-            for sv_index, (start, _) in enumerate(self.bps):
-                seq_start, seq_end = self.one_base_anchor(start - cluster_start, len(seq))
+            for sv_index, (start, end) in enumerate(self.bps):
+                seq_start, seq_end = self.project_ref_interval(
+                    start,
+                    end,
+                    active_mappings=[],
+                    cluster_start=cluster_start,
+                    sequence_length=len(seq),
+                )
                 sv_intervals.append((sv_index, seq_start, seq_end))
             return seq, sv_intervals
 
@@ -148,12 +176,17 @@ class SVCluster:
             for sv_index, (_, _, hap_start, hap_end) in zip(hap_indexes, active_mappings)
         }
         sv_intervals = []
-        for sv_index, (start, _) in enumerate(self.bps):
+        for sv_index, (start, end) in enumerate(self.bps):
             if sv_index in active_intervals:
                 seq_start, seq_end = active_intervals[sv_index]
             else:
-                projected_start = self.project_ref_boundary(start, active_mappings, cluster_start, "start")
-                seq_start, seq_end = self.one_base_anchor(projected_start, len(seq))
+                seq_start, seq_end = self.project_ref_interval(
+                    start,
+                    end,
+                    active_mappings,
+                    cluster_start,
+                    len(seq),
+                )
             sv_intervals.append((sv_index, seq_start, seq_end))
 
         return seq, sv_intervals
