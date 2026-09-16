@@ -6,7 +6,7 @@ A post-calling structural variant (SV) filtering tool for long-read sequencing d
 
 DIP-SV-FILTER treats filtering as a local diploid sequence explanation problem: which pair of candidate haplotypes best explains the observed reads? This supports joint evaluation and re-genotyping of nearby calls, where overlapping events, alignment artifacts, and alternative variant representations can make independent SV scoring unreliable.
 
-![DIP-SV-FILTER pipeline: train an SV-signal model, cluster candidate variants, construct and prefilter haplotype pairs, realign reads, and select the pair with the least residual SV signal.](docs/images/dip-sv-filter-pipeline.png)
+![DIP-SV-FILTER pipeline: train an SV-signal model, cluster candidate variants, construct and prefilter haplotype pairs, realign reads, and select the pair with the least residual SV signal.](docs/images/pipeline.png)
 
 *Pipeline overview extracted from Figure 1 of the project poster, “DipSVFilter: filtering false-positive structural variants through cluster-aware diploid hypothesis modeling,” by Yichen Henry Liu, Rohit Khurana, and Xin Maizie Zhou. The figure describes the full method; implementation coverage is listed below.*
 
@@ -186,7 +186,7 @@ src/
   realign_with_secondary.py         # minimap2 realignment retaining secondary hits
   utils.py                          # VCF/reference helpers
 docs/images/
-  dip-sv-filter-pipeline.png         # pipeline overview extracted from the poster
+  pipeline.png         # pipeline overview extracted from the poster
 plans/                              # local planning documents (ignored)
 data/
   baseline/features/{training,validation,test}/
@@ -215,4 +215,4 @@ Pre-commit and pre-push hooks check file hygiene, run Ruff lint and formatting, 
 
 The existing script paths remain supported. `uv sync` also installs the modules under `src/`, so commands such as `uv run python -m models.train --help` work. Realignment additionally requires `minimap2` on `PATH`.
 
-Personal agent instructions, agent configuration, skills, and `plans/` are ignored for new files. Already tracked instruction files remain tracked until explicitly removed from the index.
+Personal agent instructions, agent configuration, skills, and `plans/` are local and ignored by Git.
