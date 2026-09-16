@@ -169,6 +169,27 @@ class StructuralVariantCluster:
         anchor_start = min(max(position, 0), sequence_length - 1)
         return anchor_start, anchor_start + 1
 
+    def project_reference_interval(
+        self,
+        reference_start: int,
+        reference_end: int,
+        active_mappings: list[tuple[int, int, int, int]],
+        cluster_start: int,
+        sequence_length: int,
+    ) -> tuple[int, int]:
+        """Project a retained reference allele onto the haplotype sequence."""
+        sequence_start = self.project_reference_boundary(
+            reference_start, active_mappings, cluster_start, "start"
+        )
+        sequence_end = self.project_reference_boundary(
+            reference_end, active_mappings, cluster_start, "end"
+        )
+        sequence_start = min(max(sequence_start, 0), sequence_length)
+        sequence_end = min(max(sequence_end, 0), sequence_length)
+        if sequence_end <= sequence_start:
+            return self.one_base_anchor(sequence_start, sequence_length)
+        return sequence_start, sequence_end
+
     def build_haplotype_sequence(
         self,
         cluster_start: int,
@@ -202,9 +223,9 @@ class StructuralVariantCluster:
                 cluster_end,
             )
             variant_intervals = []
-            for variant_index, (start, _) in enumerate(self.breakpoints):
-                sequence_start, sequence_end = self.one_base_anchor(
-                    start - cluster_start, len(sequence)
+            for variant_index, (start, end) in enumerate(self.breakpoints):
+                sequence_start, sequence_end = self.project_reference_interval(
+                    start, end, [], cluster_start, len(sequence)
                 )
                 variant_intervals.append((variant_index, sequence_start, sequence_end))
             return sequence, variant_intervals
@@ -266,15 +287,12 @@ class StructuralVariantCluster:
             )
         }
         variant_intervals = []
-        for variant_index, (start, _) in enumerate(self.breakpoints):
+        for variant_index, (start, end) in enumerate(self.breakpoints):
             if variant_index in active_intervals:
                 sequence_start, sequence_end = active_intervals[variant_index]
             else:
-                projected_start = self.project_reference_boundary(
-                    start, active_mappings, cluster_start, "start"
-                )
-                sequence_start, sequence_end = self.one_base_anchor(
-                    projected_start, len(sequence)
+                sequence_start, sequence_end = self.project_reference_interval(
+                    start, end, active_mappings, cluster_start, len(sequence)
                 )
             variant_intervals.append((variant_index, sequence_start, sequence_end))
 
