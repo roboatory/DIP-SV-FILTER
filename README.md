@@ -152,7 +152,7 @@ uv run python src/models/train.py \
 
 Training logs to [Weights & Biases](https://wandb.ai) by default (`--wandb-mode disabled` to turn off).
 
-The collaborator's `src/models/train_yichen.py` is also retained as a separate training recipe using the same architecture: 30 epochs, 12 workers, a constant learning rate, no W&B logging, and optional shared `--labels_file_path`. Its CLI retains underscore-style options; run it with `--help` for details. `src/models/export_false_samples.py` exports misclassified windows and requires explicit checkpoint, split, and output paths.
+There is one trainer, `src/models/train.py`. To reproduce the collaborator's training settings, add `--epochs 30 --worker-count 12 --lr-scheduler constant --wandb-mode disabled`. Use `--labels-file-path path/to/labels.txt` for a shared labels file; otherwise labels are resolved per split. Feature shapes are validated before training. `src/models/export_false_samples.py` exports misclassified windows and requires explicit checkpoint, split, and output paths.
 
 Prepare training, validation, and test directories separately; the labeled-data generator does not create these splits automatically. Training defaults to 20 epochs, batch size 64, AdamW with learning rate `2e-4` and weight decay `1e-3`, and cosine annealing. The best checkpoint is selected by validation elementwise F1. Outputs include `best_model.pt`, `final_model.pt`, `history.json`, `test_metrics.json`, and `run_summary.json`.
 
@@ -207,7 +207,6 @@ src/
     architecture.py                 # CNN-Transformer model definition
     train.py                        # training loop, metrics, checkpointing
     inference.py                    # batch inference from checkpoint
-    train_yichen.py                 # collaborator training recipe, same architecture
     export_false_samples.py         # labeled prediction diagnostics
   filter_contig_pairs.py            # read-local k-mer prefilter for haplotype pairs
   realign_with_secondary.py         # optional cluster-level realignment

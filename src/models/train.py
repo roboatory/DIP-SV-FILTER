@@ -311,11 +311,13 @@ def create_dataloader(
     shuffle: bool,
     worker_count: int,
     max_samples: int | None = None,
+    labels_file_path: Path | None = None,
 ) -> DataLoader[tuple[Tensor, Tensor]]:
     """Create a labeled feature-window dataloader."""
 
     resolved_labels_file_path = resolve_labels_file_path(
         split_directory=split_directory,
+        labels_file_path=labels_file_path,
     )
     labels = load_labels(resolved_labels_file_path)
     dataset = SVWindowDataset(
@@ -476,6 +478,18 @@ def parse_arguments() -> argparse.Namespace:
         help="Directory for checkpoints and metrics.",
     )
     parser.add_argument(
+        "--labels-file-path",
+        type=Path,
+        default=None,
+        help="Optional shared labels.txt; otherwise resolve labels per split.",
+    )
+    parser.add_argument(
+        "--lr-scheduler",
+        choices=("cosine", "constant"),
+        default="cosine",
+        help="Learning-rate schedule. Default: cosine.",
+    )
+    parser.add_argument(
         "--epochs", type=int, default=20, help="Number of training epochs."
     )
     parser.add_argument(
@@ -558,6 +572,7 @@ def train(
             shuffle=True,
             worker_count=arguments.worker_count,
             max_samples=arguments.maximum_samples,
+            labels_file_path=arguments.labels_file_path,
         )
         validation_loader = create_dataloader(
             split_directory=arguments.validation_directory,
@@ -565,6 +580,7 @@ def train(
             shuffle=False,
             worker_count=arguments.worker_count,
             max_samples=arguments.maximum_samples,
+            labels_file_path=arguments.labels_file_path,
         )
         test_loader = create_dataloader(
             split_directory=arguments.test_directory,
@@ -572,6 +588,7 @@ def train(
             shuffle=False,
             worker_count=arguments.worker_count,
             max_samples=arguments.maximum_samples,
+            labels_file_path=arguments.labels_file_path,
         )
 
         device = torch.device(arguments.device)
@@ -582,7 +599,11 @@ def train(
             lr=arguments.learning_rate,
             weight_decay=arguments.weight_decay,
         )
-        scheduler = CosineAnnealingLR(optimizer, T_max=arguments.epochs, eta_min=1e-6)
+        scheduler = (
+            CosineAnnealingLR(optimizer, T_max=arguments.epochs, eta_min=1e-6)
+            if arguments.lr_scheduler == "cosine"
+            else None
+        )
 
         best_validation_f1 = float("-inf")
         history: list[dict[str, Any]] = []
@@ -603,7 +624,8 @@ def train(
                 optimizer=None,
             )
 
-            scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
 
             epoch_record = {
                 "epoch": epoch,
