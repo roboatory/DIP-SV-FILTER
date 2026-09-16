@@ -9,10 +9,8 @@ from typing import Any
 
 import numpy as np
 import torch
-import wandb
 from torch import Tensor, nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
 
 try:
@@ -54,26 +52,6 @@ def safe_divide(
     """Divide two values and return zero for a zero denominator."""
 
     return numerator / denominator if denominator else 0.0
-
-
-def serialize_arguments(
-    arguments: argparse.Namespace,
-) -> dict[str, Any]:
-    """Convert argparse values into JSON-serializable strings when needed."""
-
-    return {
-        key: str(value) if isinstance(value, Path) else value
-        for key, value in vars(arguments).items()
-    }
-
-
-def prefix_metrics(
-    prefix: str,
-    metrics: EpochMetrics,
-) -> dict[str, float]:
-    """Prefix metric keys for grouped logging."""
-
-    return {f"{prefix}/{key}": value for key, value in asdict(metrics).items()}
 
 
 def parse_label_vector(
@@ -133,9 +111,8 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
         self,
         split_directory: Path,
         labels: dict[str, Tensor],
-        max_samples: int | None = None,
     ) -> None:
-        """Validate feature files and associate them with labels."""
+        """Initialize and validate the dataset or accumulator."""
 
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
@@ -147,10 +124,6 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
             raise ValueError(
                 f"No .npy files found in split directory: {split_directory}"
             )
-        if max_samples is not None:
-            if max_samples <= 0:
-                raise ValueError("--maximum-samples must be a positive integer")
-            files = files[:max_samples]
 
         missing_labels = [path.name for path in files if path.name not in labels]
         if missing_labels:
@@ -162,17 +135,10 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
         self.samples = [path for path in files if path.name in labels]
         self.labels = labels
 
-        for sample_path in self.samples:
-            array = np.load(sample_path, mmap_mode="r")
-            if array.shape != EXPECTED_INPUT_SHAPE:
-                raise ValueError(
-                    f"{sample_path} has shape {array.shape}, expected {EXPECTED_INPUT_SHAPE}"
-                )
-
     def __len__(
         self,
     ) -> int:
-        """Return the number of labeled feature windows."""
+        """Return the number of feature windows."""
 
         return len(self.samples)
 
@@ -180,7 +146,7 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
         self,
         index: int,
     ) -> tuple[Tensor, Tensor]:
-        """Load one feature window and a copy of its labels."""
+        """Load a feature window and its associated metadata."""
 
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
@@ -205,7 +171,7 @@ class MetricsAccumulator:
     def __init__(
         self,
     ) -> None:
-        """Initialize loss and prediction counters."""
+        """Initialize and validate the dataset or accumulator."""
 
         self.loss_sum = 0.0
         self.sample_count = 0
@@ -307,34 +273,31 @@ class MetricsAccumulator:
 
 def create_dataloader(
     split_directory: Path,
+    labels_file_path: Path | None,
     batch_size: int,
     shuffle: bool,
-    worker_count: int,
-    max_samples: int | None = None,
+    num_workers: int,
 ) -> DataLoader[tuple[Tensor, Tensor]]:
     """Create a labeled feature-window dataloader."""
 
     resolved_labels_file_path = resolve_labels_file_path(
         split_directory=split_directory,
+        labels_file_path=labels_file_path,
     )
     labels = load_labels(resolved_labels_file_path)
-    dataset = SVWindowDataset(
-        split_directory=split_directory,
-        labels=labels,
-        max_samples=max_samples,
-    )
+    dataset = SVWindowDataset(split_directory=split_directory, labels=labels)
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=worker_count,
+        num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )
 
 
 def resolve_labels_file_path(
     split_directory: Path,
-    labels_file_path: Path | None = None,
+    labels_file_path: Path | None,
 ) -> Path:
     """Resolve labels.txt from a split directory or its parent."""
 
@@ -391,16 +354,20 @@ def save_checkpoint(
     optimizer: AdamW,
     epoch: int,
     metrics: EpochMetrics,
-    arguments: argparse.Namespace,
+    args: argparse.Namespace,
 ) -> None:
     """Save a model checkpoint."""
 
+    serialized_args = {
+        key: str(value) if isinstance(value, Path) else value
+        for key, value in vars(args).items()
+    }
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "metrics": asdict(metrics),
-        "args": serialize_arguments(arguments),
+        "args": serialized_args,
     }
     torch.save(checkpoint, path)
 
@@ -415,128 +382,68 @@ def write_json(
         json.dump(payload, handle, indent=2, sort_keys=True)
 
 
-def initialize_wandb(
-    arguments: argparse.Namespace,
-) -> wandb.sdk.wandb_run.Run | None:
-    """Initialize a Weights & Biases run unless disabled."""
-
-    if arguments.wandb_mode == "disabled":
-        return None
-
-    init_kwargs = {
-        "project": arguments.wandb_project,
-        "name": arguments.wandb_run_name,
-        "mode": arguments.wandb_mode,
-        "anonymous": "allow",
-        "config": serialize_arguments(arguments),
-    }
-    try:
-        run = wandb.init(**init_kwargs)
-    except wandb.errors.UsageError:
-        if arguments.wandb_mode != "online":
-            raise
-        print("wandb online init failed; retrying in offline mode")
-        run = wandb.init(**{**init_kwargs, "mode": "offline"})
-
-    run.define_metric("epoch")
-    run.define_metric("*", step_metric="epoch")
-    return run
-
-
-def parse_arguments() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(description="Train the adapted SVHunter model.")
+
     parser.add_argument(
-        "--train-directory",
+        "--train_directory",
         dest="train_directory",
         type=Path,
         required=True,
         help="Directory of training .npy files.",
     )
     parser.add_argument(
-        "--validation-directory",
+        "--validation_directory",
         dest="validation_directory",
         type=Path,
         required=True,
         help="Directory of validation .npy files.",
     )
     parser.add_argument(
-        "--test-directory",
+        "--test_directory",
         dest="test_directory",
         type=Path,
         required=True,
         help="Directory of test .npy files.",
     )
     parser.add_argument(
-        "--output-directory",
+        "--output_directory",
         dest="output_directory",
         type=Path,
         required=True,
         help="Directory for checkpoints and metrics.",
     )
     parser.add_argument(
-        "--epochs", type=int, default=20, help="Number of training epochs."
-    )
-    parser.add_argument(
-        "--batch-size", dest="batch_size", type=int, default=64, help="Batch size."
-    )
-    parser.add_argument(
-        "--learning-rate",
-        dest="learning_rate",
-        type=float,
-        default=2e-4,
-        help="AdamW learning rate.",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        dest="weight_decay",
-        type=float,
-        default=1e-3,
-        help="AdamW weight decay.",
-    )
-    parser.add_argument(
-        "--worker-count",
-        dest="worker_count",
-        type=int,
-        default=0,
-        help="DataLoader worker processes.",
-    )
-    parser.add_argument(
-        "--maximum-samples",
-        dest="maximum_samples",
-        type=int,
+        "--labels_file_path",
+        dest="labels_file_path",
+        type=Path,
         default=None,
-        help="Optional cap on the number of samples loaded from each split.",
+        help="Optional path to a shared labels.txt. If omitted, labels.txt is resolved per split.",
     )
+
+    parser.add_argument(
+        "--epochs", type=int, default=30, help="Number of training epochs."
+    )
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size.")
+    parser.add_argument(
+        "--learning_rate", type=float, default=2e-4, help="Adam learning rate."
+    )
+
+    parser.add_argument(
+        "--weight_decay", type=float, default=1e-3, help="Adam weight decay."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=12, help="DataLoader worker processes."
+    )
+
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument(
         "--device",
         type=str,
         default=get_default_device_name(),
         help="Training device, for example cpu, mps, or cuda.",
-    )
-    parser.add_argument(
-        "--wandb-mode",
-        dest="wandb_mode",
-        type=str,
-        choices=("online", "offline", "disabled"),
-        default="online",
-        help="Weights & Biases logging mode.",
-    )
-    parser.add_argument(
-        "--wandb-project",
-        dest="wandb_project",
-        type=str,
-        default="structural-variant-detection",
-        help="Weights & Biases project name.",
-    )
-    parser.add_argument(
-        "--wandb-run-name",
-        dest="wandb_run_name",
-        type=str,
-        default=None,
-        help="Optional Weights & Biases run name.",
     )
 
     return parser.parse_args()
@@ -549,162 +456,134 @@ def train(
 
     set_seed(arguments.seed)
     arguments.output_directory.mkdir(parents=True, exist_ok=True)
-    wandb_run = initialize_wandb(arguments)
 
-    try:
-        train_loader = create_dataloader(
-            split_directory=arguments.train_directory,
-            batch_size=arguments.batch_size,
-            shuffle=True,
-            worker_count=arguments.worker_count,
-            max_samples=arguments.maximum_samples,
+    train_loader = create_dataloader(
+        split_directory=arguments.train_directory,
+        labels_file_path=arguments.labels_file_path,
+        batch_size=arguments.batch_size,
+        shuffle=True,
+        num_workers=arguments.num_workers,
+    )
+    validation_loader = create_dataloader(
+        split_directory=arguments.validation_directory,
+        labels_file_path=arguments.labels_file_path,
+        batch_size=arguments.batch_size,
+        shuffle=False,
+        num_workers=arguments.num_workers,
+    )
+    test_loader = create_dataloader(
+        split_directory=arguments.test_directory,
+        labels_file_path=arguments.labels_file_path,
+        batch_size=arguments.batch_size,
+        shuffle=False,
+        num_workers=arguments.num_workers,
+    )
+
+    device = torch.device(arguments.device)
+    model = SVHunterModel().to(device)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = AdamW(
+        model.parameters(),
+        lr=arguments.learning_rate,
+        weight_decay=arguments.weight_decay,
+    )
+
+    best_validation_f1 = float("-inf")
+    history: list[dict[str, Any]] = []
+
+    for epoch in range(1, arguments.epochs + 1):
+        train_metrics = run_epoch(
+            model=model,
+            dataloader=train_loader,
+            criterion=criterion,
+            device=device,
+            optimizer=optimizer,
         )
-        validation_loader = create_dataloader(
-            split_directory=arguments.validation_directory,
-            batch_size=arguments.batch_size,
-            shuffle=False,
-            worker_count=arguments.worker_count,
-            max_samples=arguments.maximum_samples,
-        )
-        test_loader = create_dataloader(
-            split_directory=arguments.test_directory,
-            batch_size=arguments.batch_size,
-            shuffle=False,
-            worker_count=arguments.worker_count,
-            max_samples=arguments.maximum_samples,
-        )
-
-        device = torch.device(arguments.device)
-        model = SVHunterModel().to(device)
-        criterion = nn.BCEWithLogitsLoss()
-        optimizer = AdamW(
-            model.parameters(),
-            lr=arguments.learning_rate,
-            weight_decay=arguments.weight_decay,
-        )
-        scheduler = CosineAnnealingLR(optimizer, T_max=arguments.epochs, eta_min=1e-6)
-
-        best_validation_f1 = float("-inf")
-        history: list[dict[str, Any]] = []
-
-        for epoch in range(1, arguments.epochs + 1):
-            train_metrics = run_epoch(
-                model=model,
-                dataloader=train_loader,
-                criterion=criterion,
-                device=device,
-                optimizer=optimizer,
-            )
-            validation_metrics = run_epoch(
-                model=model,
-                dataloader=validation_loader,
-                criterion=criterion,
-                device=device,
-                optimizer=None,
-            )
-
-            scheduler.step()
-
-            epoch_record = {
-                "epoch": epoch,
-                "train": asdict(train_metrics),
-                "val": asdict(validation_metrics),
-            }
-            history.append(epoch_record)
-            print(
-                f"epoch={epoch} "
-                f"train_loss={train_metrics.loss:.4f} "
-                f"val_loss={validation_metrics.loss:.4f} "
-                f"val_elementwise_f1={validation_metrics.elementwise_f1:.4f}"
-            )
-
-            if validation_metrics.elementwise_f1 > best_validation_f1:
-                best_validation_f1 = validation_metrics.elementwise_f1
-                save_checkpoint(
-                    path=arguments.output_directory / "best_model.pt",
-                    model=model,
-                    optimizer=optimizer,
-                    epoch=epoch,
-                    metrics=validation_metrics,
-                    arguments=arguments,
-                )
-
-            if wandb_run is not None:
-                wandb_run.log(
-                    {
-                        "epoch": epoch,
-                        **prefix_metrics("train", train_metrics),
-                        **prefix_metrics("val", validation_metrics),
-                        "best/validation_elementwise_f1": best_validation_f1,
-                    }
-                )
-
-        final_validation_metrics = run_epoch(
+        validation_metrics = run_epoch(
             model=model,
             dataloader=validation_loader,
             criterion=criterion,
             device=device,
             optimizer=None,
         )
-        save_checkpoint(
-            path=arguments.output_directory / "final_model.pt",
-            model=model,
-            optimizer=optimizer,
-            epoch=arguments.epochs,
-            metrics=final_validation_metrics,
-            arguments=arguments,
-        )
 
-        best_checkpoint = torch.load(
-            arguments.output_directory / "best_model.pt",
-            map_location=device,
-            weights_only=False,
-        )
-        model.load_state_dict(best_checkpoint["model_state_dict"])
-        test_metrics = run_epoch(
-            model=model,
-            dataloader=test_loader,
-            criterion=criterion,
-            device=device,
-            optimizer=None,
-        )
-
-        results = {
-            "best_validation_elementwise_f1": best_validation_f1,
-            "test_metrics": asdict(test_metrics),
-            "history": history,
+        epoch_record = {
+            "epoch": epoch,
+            "train": asdict(train_metrics),
+            "val": asdict(validation_metrics),
         }
-        write_json(arguments.output_directory / "history.json", history)
-        write_json(
-            arguments.output_directory / "test_metrics.json", asdict(test_metrics)
-        )
-        write_json(arguments.output_directory / "run_summary.json", results)
-
-        if wandb_run is not None:
-            wandb_run.log(
-                {"epoch": arguments.epochs, **prefix_metrics("test", test_metrics)}
-            )
-            wandb_run.summary["best_validation_elementwise_f1"] = best_validation_f1
-            for key, value in prefix_metrics("test", test_metrics).items():
-                wandb_run.summary[key] = value
-
+        history.append(epoch_record)
         print(
-            "test "
-            f"loss={test_metrics.loss:.4f} "
-            f"elementwise_f1={test_metrics.elementwise_f1:.4f} "
-            f"exact_match_accuracy={test_metrics.exact_match_accuracy:.4f} "
-            f"any_sv_f1={test_metrics.any_sv_f1:.4f}"
+            f"epoch={epoch} "
+            f"train_loss={train_metrics.loss:.4f} "
+            f"val_loss={validation_metrics.loss:.4f} "
+            f"val_elementwise_f1={validation_metrics.elementwise_f1:.4f}"
         )
-        return results
-    finally:
-        if wandb_run is not None:
-            wandb_run.finish()
+
+        if validation_metrics.elementwise_f1 > best_validation_f1:
+            best_validation_f1 = validation_metrics.elementwise_f1
+            save_checkpoint(
+                path=arguments.output_directory / "best_model.pt",
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                metrics=validation_metrics,
+                args=arguments,
+            )
+
+    final_validation_metrics = run_epoch(
+        model=model,
+        dataloader=validation_loader,
+        criterion=criterion,
+        device=device,
+        optimizer=None,
+    )
+    save_checkpoint(
+        path=arguments.output_directory / "final_model.pt",
+        model=model,
+        optimizer=optimizer,
+        epoch=arguments.epochs,
+        metrics=final_validation_metrics,
+        args=arguments,
+    )
+
+    best_checkpoint = torch.load(
+        arguments.output_directory / "best_model.pt",
+        map_location=device,
+        weights_only=False,
+    )
+    model.load_state_dict(best_checkpoint["model_state_dict"])
+    test_metrics = run_epoch(
+        model=model,
+        dataloader=test_loader,
+        criterion=criterion,
+        device=device,
+        optimizer=None,
+    )
+
+    results = {
+        "best_validation_elementwise_f1": best_validation_f1,
+        "test_metrics": asdict(test_metrics),
+        "history": history,
+    }
+    write_json(arguments.output_directory / "history.json", history)
+    write_json(arguments.output_directory / "test_metrics.json", asdict(test_metrics))
+    write_json(arguments.output_directory / "run_summary.json", results)
+
+    print(
+        "test "
+        f"loss={test_metrics.loss:.4f} "
+        f"elementwise_f1={test_metrics.elementwise_f1:.4f} "
+        f"exact_match_accuracy={test_metrics.exact_match_accuracy:.4f} "
+        f"any_sv_f1={test_metrics.any_sv_f1:.4f}"
+    )
+    return results
 
 
 def main() -> None:
-    """Run the training command-line interface."""
+    """Run the command-line workflow."""
 
-    arguments = parse_arguments()
+    arguments = parse_args()
     train(arguments)
 
 
