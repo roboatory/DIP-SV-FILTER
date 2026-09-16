@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import torch
-from torch import Tensor, nn
 import torch.nn.functional as F
+from torch import Tensor, nn
 
 
 class SVHunterSubwindowEncoder(nn.Module):
-    def __init__(self, feature_count: int = 9) -> None:
+    def __init__(
+        self,
+        feature_count: int = 9,
+    ) -> None:
+        """Initialize the convolutional subwindow encoder."""
+
         super().__init__()
         self.layers = nn.Sequential(
             nn.Conv2d(1, 128, kernel_size=(1, feature_count), padding="valid"),  # 200
@@ -27,7 +32,10 @@ class SVHunterSubwindowEncoder(nn.Module):
         )
         self.output_dimension = 64
 
-    def forward(self, inputs: Tensor) -> Tensor:
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
         """Encode one batch of subwindows into flat CNN embeddings."""
 
         encoded_inputs = self.layers(inputs)
@@ -42,6 +50,8 @@ class SVHunterMultiHeadAttention(nn.Module):
         key_dimension: int = 32,
         dropout: float = 0.3,
     ) -> None:
+        """Initialize the attention projections and dropout rate."""
+
         super().__init__()
         self.embedding_dimension = embedding_dimension
         self.attention_head_count = attention_head_count
@@ -61,7 +71,10 @@ class SVHunterMultiHeadAttention(nn.Module):
         )
         self.dropout = dropout
 
-    def forward(self, inputs: Tensor) -> Tensor:
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
         """Apply multi-head scaled dot-product self-attention."""
 
         batch_size, sequence_length, _ = inputs.shape
@@ -109,6 +122,8 @@ class SVHunterTransformerBlock(nn.Module):
         key_dimension: int = 32,
         dropout: float = 0.3,
     ) -> None:
+        """Initialize the attention and feed-forward layers."""
+
         super().__init__()
         self.layer_normalization_1 = nn.LayerNorm(embedding_dimension)
         self.attention = SVHunterMultiHeadAttention(
@@ -127,7 +142,10 @@ class SVHunterTransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, inputs: Tensor) -> Tensor:
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
         """Apply one residual transformer block."""
 
         attended_inputs = inputs + self.attention(self.layer_normalization_1(inputs))
@@ -151,6 +169,8 @@ class SVHunterModel(nn.Module):
         attention_dropout: float = 0.1,
         head_dropout: float = 0.2,
     ) -> None:
+        """Initialize the CNN-Transformer classifier."""
+
         super().__init__()
         if input_length != subwindow_size * subwindow_count:
             raise ValueError("input_length must equal subwindow_size * subwindow_count")
@@ -197,7 +217,10 @@ class SVHunterModel(nn.Module):
             nn.Linear(multilayer_perceptron_hidden_dimension, 1),
         )
 
-    def forward(self, inputs: Tensor) -> Tensor:
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
         """Predict subwindow-level structural variant logits."""
 
         if inputs.ndim != 3:

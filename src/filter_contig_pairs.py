@@ -4,13 +4,13 @@ import argparse
 import csv
 import itertools
 import re
-from collections.abc import Iterable, Iterator, Sequence
 from collections import defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-import pysam
 
+import pysam
 
 DNA_ALPHABET = set("ACGT")
 REVCOMP_TABLE = str.maketrans("ACGTacgt", "TGCAtgca")
@@ -65,7 +65,9 @@ class ReadEvidence:
     informative_kmers: int = 0
 
     @property
-    def weight(self) -> float:
+    def weight(
+        self,
+    ) -> float:
         """Cap read contribution so highly repetitive evidence cannot dominate."""
 
         return min(1.0, self.informative_kmers / 20.0)
@@ -94,20 +96,26 @@ class PairScore:
     reason: str
 
 
-def reverse_complement(sequence: str) -> str:
+def reverse_complement(
+    sequence: str,
+) -> str:
     """Return reverse complement sequence."""
 
     return sequence.translate(REVCOMP_TABLE)[::-1].upper()
 
 
-def canonical_kmer(kmer: str) -> str:
+def canonical_kmer(
+    kmer: str,
+) -> str:
     """Return canonical representation of a k-mer."""
 
     kmer = kmer.upper()
     return min(kmer, reverse_complement(kmer))
 
 
-def homopolymer_compress(sequence: str) -> str:
+def homopolymer_compress(
+    sequence: str,
+) -> str:
     """Collapse consecutive identical bases."""
 
     if not sequence:
@@ -120,7 +128,9 @@ def homopolymer_compress(sequence: str) -> str:
     return "".join(compressed)
 
 
-def max_homopolymer_run(sequence: str) -> int:
+def max_homopolymer_run(
+    sequence: str,
+) -> int:
     """Return the longest run of one repeated base."""
 
     if not sequence:
@@ -137,7 +147,9 @@ def max_homopolymer_run(sequence: str) -> int:
     return best
 
 
-def is_low_complexity(kmer: str) -> bool:
+def is_low_complexity(
+    kmer: str,
+) -> bool:
     """Heuristic low-complexity filter for first-pass informative k-mers."""
 
     unique_bases = set(kmer)
@@ -171,14 +183,16 @@ def iter_kmers(
         yield canonical_kmer(kmer) if canonical else kmer
 
 
-def read_fasta(fasta_path: str) -> list[tuple[str, str]]:
+def read_fasta(
+    fasta_path: str,
+) -> list[tuple[str, str]]:
     """Read FASTA records as ``(name, sequence)`` tuples."""
 
     records: list[tuple[str, str]] = []
     current_name: str | None = None
     current_parts: list[str] = []
 
-    with open(fasta_path, "r", encoding="utf-8") as handle:
+    with Path(fasta_path).open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
@@ -200,7 +214,9 @@ def read_fasta(fasta_path: str) -> list[tuple[str, str]]:
     return records
 
 
-def parse_header_fields(name: str) -> dict[str, str]:
+def parse_header_fields(
+    name: str,
+) -> dict[str, str]:
     """Parse pipe-delimited FASTA header fields."""
 
     fields: dict[str, str] = {}
@@ -240,7 +256,9 @@ def parse_structural_variant_intervals(
     return tuple(intervals)
 
 
-def parse_genotype_states(value: str) -> tuple[int, ...]:
+def parse_genotype_states(
+    value: str,
+) -> tuple[int, ...]:
     """Parse ``GT=0:1:...`` state vector."""
 
     if not value:
@@ -248,13 +266,17 @@ def parse_genotype_states(value: str) -> tuple[int, ...]:
     return tuple(int(item) for item in value.split(":"))
 
 
-def contig_genotype_label(genotype_states: Sequence[int]) -> str:
+def contig_genotype_label(
+    genotype_states: Sequence[int],
+) -> str:
     """Return compact genotype-state label used as haplotype ID."""
 
     return "".join(str(state) for state in genotype_states)
 
 
-def load_haplotypes(fasta_path: str) -> list[Haplotype]:
+def load_haplotypes(
+    fasta_path: str,
+) -> list[Haplotype]:
     """Load pseudo-haplotypes and validate header consistency."""
 
     haplotypes: list[Haplotype] = []
@@ -301,7 +323,9 @@ def load_haplotypes(fasta_path: str) -> list[Haplotype]:
     return haplotypes
 
 
-def cluster_interval_from_fasta(fasta_path: str) -> tuple[str, int, int]:
+def cluster_interval_from_fasta(
+    fasta_path: str,
+) -> tuple[str, int, int]:
     """Parse ``chrom_start-end`` from FASTA basename."""
 
     stem = Path(fasta_path).stem
@@ -315,7 +339,9 @@ def cluster_interval_from_fasta(fasta_path: str) -> tuple[str, int, int]:
     return chromosome, int(start), int(end)
 
 
-def make_pairs(haplotypes: Sequence[Haplotype]) -> list[HaplotypePair]:
+def make_pairs(
+    haplotypes: Sequence[Haplotype],
+) -> list[HaplotypePair]:
     """Generate unordered haplotype pairs, including homozygous/self pairs."""
 
     pairs: list[HaplotypePair] = []
@@ -333,7 +359,12 @@ def make_pairs(haplotypes: Sequence[Haplotype]) -> list[HaplotypePair]:
     return pairs
 
 
-def interval_context(sequence: str, start: int, end: int, window: int) -> str:
+def interval_context(
+    sequence: str,
+    start: int,
+    end: int,
+    window: int,
+) -> str:
     """Return sequence window around a pseudo-haplotype SV interval."""
 
     left = max(0, start - window)
@@ -509,7 +540,9 @@ def nearby_large_query_segments(
 
 
 def merge_intervals(
-    intervals: Iterable[tuple[int, int]], flank: int, sequence_length: int
+    intervals: Iterable[tuple[int, int]],
+    flank: int,
+    sequence_length: int,
 ) -> list[tuple[int, int]]:
     """Merge query intervals after adding a flank."""
 
@@ -532,7 +565,9 @@ def merge_intervals(
     return merged
 
 
-def record_sequence_priority(record: pysam.AlignedSegment) -> tuple[int, int, int]:
+def record_sequence_priority(
+    record: pysam.AlignedSegment,
+) -> tuple[int, int, int]:
     """Rank records for recovering one representative read sequence."""
 
     sequence_length = len(record.query_sequence) if record.query_sequence else 0
@@ -638,7 +673,10 @@ def build_read_evidence(
     return read_evidence
 
 
-def haplotype_compatibility(haplotype: Haplotype, evidence: ReadEvidence) -> float:
+def haplotype_compatibility(
+    haplotype: Haplotype,
+    evidence: ReadEvidence,
+) -> float:
     """Compute positive read compatibility for one haplotype."""
 
     score = 0.0
@@ -738,7 +776,9 @@ def select_scored_pairs(
     return selected
 
 
-def bypass_pairs(pairs: Sequence[HaplotypePair]) -> list[PairScore]:
+def bypass_pairs(
+    pairs: Sequence[HaplotypePair],
+) -> list[PairScore]:
     """Return all pairs without k-mer scoring."""
 
     return [
@@ -820,35 +860,45 @@ def summarize_structural_variant_evidence(
 
 
 def write_tsv(
-    path: str, rows: Sequence[dict[str, object]], fields: Sequence[str]
+    path: str,
+    rows: Sequence[dict[str, object]],
+    fields: Sequence[str],
 ) -> None:
     """Write rows to a tab-delimited file."""
 
-    with open(path, "w", encoding="utf-8", newline="") as handle:
+    with Path(path).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
 
 
-def wrap_sequence(sequence: str, width: int = 80) -> Iterator[str]:
+def wrap_sequence(
+    sequence: str,
+    width: int = 80,
+) -> Iterator[str]:
     """Yield wrapped FASTA sequence lines."""
 
     for start in range(0, len(sequence), width):
         yield sequence[start : start + width]
 
 
-def write_cluster_reads_fasta(cluster_reads: ClusterReads, path: str) -> None:
+def write_cluster_reads_fasta(
+    cluster_reads: ClusterReads,
+    path: str,
+) -> None:
     """Write one deduplicated full-read FASTA for downstream alignment."""
 
-    with open(path, "w", encoding="utf-8") as handle:
+    with Path(path).open("w", encoding="utf-8") as handle:
         for read_name in sorted(cluster_reads.sequences):
             handle.write(f">{read_name}\n")
             for line in wrap_sequence(cluster_reads.sequences[read_name]):
                 handle.write(line + "\n")
 
 
-def retained_haplotypes(scores: Sequence[PairScore]) -> list[Haplotype]:
+def retained_haplotypes(
+    scores: Sequence[PairScore],
+) -> list[Haplotype]:
     """Return unique haplotypes appearing in retained pairs, preserving rank order."""
 
     retained: list[Haplotype] = []
@@ -897,7 +947,9 @@ def write_retained_haplotype_fastas(
 
 
 def pair_score_rows(
-    scores: Sequence[PairScore], total_pairs: int, prefilter_applied: bool
+    scores: Sequence[PairScore],
+    total_pairs: int,
+    prefilter_applied: bool,
 ) -> list[dict[str, object]]:
     """Convert pair scores to TSV rows."""
 
@@ -929,7 +981,9 @@ def pair_score_rows(
     return rows
 
 
-def haplotype_rows(haplotypes: Sequence[Haplotype]) -> list[dict[str, object]]:
+def haplotype_rows(
+    haplotypes: Sequence[Haplotype],
+) -> list[dict[str, object]]:
     """Convert haplotypes to TSV rows."""
 
     rows: list[dict[str, object]] = []
@@ -972,7 +1026,9 @@ def read_evidence_rows(
     return rows
 
 
-def discover_fasta_paths(path: str) -> list[str]:
+def discover_fasta_paths(
+    path: str,
+) -> list[str]:
     """Return FASTA input paths from one file or a directory."""
 
     input_path = Path(path)
@@ -986,7 +1042,10 @@ def discover_fasta_paths(path: str) -> list[str]:
     return [path]
 
 
-def process_cluster(fasta_path: str, arguments: argparse.Namespace) -> None:
+def process_cluster(
+    fasta_path: str,
+    arguments: argparse.Namespace,
+) -> None:
     """Run prefilter for one pseudo-haplotype FASTA cluster."""
 
     cluster_name = Path(fasta_path).stem
@@ -1142,7 +1201,9 @@ def process_cluster(fasta_path: str, arguments: argparse.Namespace) -> None:
     )
 
 
-def process_cluster_worker(task: tuple[str, argparse.Namespace]) -> None:
+def process_cluster_worker(
+    task: tuple[str, argparse.Namespace],
+) -> None:
     """Multiprocessing worker for one cluster FASTA."""
 
     fasta_path, arguments = task
@@ -1152,31 +1213,113 @@ def process_cluster_worker(task: tuple[str, argparse.Namespace]) -> None:
 def build_argument_parser() -> argparse.ArgumentParser:
     """Build CLI parser."""
 
-    # fmt: off
-    parser = argparse.ArgumentParser(description="High-recall read-local k-mer prefilter for pseudo-haplotype pairs. Input FASTA can be one cluster FASTA or a directory of cluster FASTAs.")
-    parser.add_argument("--fasta", dest="fasta_path", required=True, help="Pseudo-haplotype FASTA file or directory")
-    parser.add_argument("--bam", dest="bam_file", required=True, help="Original reference-aligned BAM")
-    parser.add_argument("--output-directory", dest="output_directory", required=True, help="Output directory")
+    parser = argparse.ArgumentParser(
+        description="High-recall read-local k-mer prefilter for pseudo-haplotype pairs. Input FASTA can be one cluster FASTA or a directory of cluster FASTAs."
+    )
+    parser.add_argument(
+        "--fasta",
+        dest="fasta_path",
+        required=True,
+        help="Pseudo-haplotype FASTA file or directory",
+    )
+    parser.add_argument(
+        "--bam", dest="bam_file", required=True, help="Original reference-aligned BAM"
+    )
+    parser.add_argument(
+        "--output-directory",
+        dest="output_directory",
+        required=True,
+        help="Output directory",
+    )
     parser.add_argument("--k", type=int, default=21, help="k-mer length (default: 21)")
-    parser.add_argument("--structural-variant-window", dest="structural_variant_window", type=int, default=250, help="Sequence flank around SV interval for state k-mers")
-    parser.add_argument("--query-flank", type=int, default=3000, help="Query flank around localized cluster interval")
-    parser.add_argument("--minimum-information-kmers", dest="minimum_information_kmers", type=int, default=5, help="Minimum informative k-mers required per read")
-    parser.add_argument("--large-insertion-threshold", dest="large_insertion_threshold", type=int, default=50, help="Large insertion CIGAR threshold")
-    parser.add_argument("--soft-clip-threshold", dest="soft_clip_threshold", type=int, default=50, help="Large soft-clip CIGAR threshold")
-    parser.add_argument("--absent-weight", type=float, default=0.5, help="Weight for absent/reference evidence")
-    parser.add_argument("--present-weight", type=float, default=1.0, help="Weight for present/ALT evidence")
-    parser.add_argument("--prefilter-pair-threshold", type=int, default=30, help="Bypass prefilter at or below this pair count")
-    parser.add_argument("--keep-top-pairs", type=int, default=30, help="Number of top scored pairs to retain after prefiltering")
-    parser.add_argument("--homopolymer-compress", action="store_true", help="Apply homopolymer compression before k-mer extraction")
-    parser.add_argument("--no-canonical", action="store_true", help="Do not canonicalize reverse-complement k-mers")
-    parser.add_argument("--keep-low-complexity", action="store_true", help="Keep low-complexity k-mers")
-    parser.add_argument("--write-read-evidence", action="store_true", help="Write long-form read evidence TSV")
-    parser.add_argument("--threads", type=int, default=1, help="Number of cluster-level worker processes")
-    # fmt: on
+    parser.add_argument(
+        "--structural-variant-window",
+        dest="structural_variant_window",
+        type=int,
+        default=250,
+        help="Sequence flank around SV interval for state k-mers",
+    )
+    parser.add_argument(
+        "--query-flank",
+        type=int,
+        default=3000,
+        help="Query flank around localized cluster interval",
+    )
+    parser.add_argument(
+        "--minimum-information-kmers",
+        dest="minimum_information_kmers",
+        type=int,
+        default=5,
+        help="Minimum informative k-mers required per read",
+    )
+    parser.add_argument(
+        "--large-insertion-threshold",
+        dest="large_insertion_threshold",
+        type=int,
+        default=50,
+        help="Large insertion CIGAR threshold",
+    )
+    parser.add_argument(
+        "--soft-clip-threshold",
+        dest="soft_clip_threshold",
+        type=int,
+        default=50,
+        help="Large soft-clip CIGAR threshold",
+    )
+    parser.add_argument(
+        "--absent-weight",
+        type=float,
+        default=0.5,
+        help="Weight for absent/reference evidence",
+    )
+    parser.add_argument(
+        "--present-weight",
+        type=float,
+        default=1.0,
+        help="Weight for present/ALT evidence",
+    )
+    parser.add_argument(
+        "--prefilter-pair-threshold",
+        type=int,
+        default=30,
+        help="Bypass prefilter at or below this pair count",
+    )
+    parser.add_argument(
+        "--keep-top-pairs",
+        type=int,
+        default=30,
+        help="Number of top scored pairs to retain after prefiltering",
+    )
+    parser.add_argument(
+        "--homopolymer-compress",
+        action="store_true",
+        help="Apply homopolymer compression before k-mer extraction",
+    )
+    parser.add_argument(
+        "--no-canonical",
+        action="store_true",
+        help="Do not canonicalize reverse-complement k-mers",
+    )
+    parser.add_argument(
+        "--keep-low-complexity", action="store_true", help="Keep low-complexity k-mers"
+    )
+    parser.add_argument(
+        "--write-read-evidence",
+        action="store_true",
+        help="Write long-form read evidence TSV",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="Number of cluster-level worker processes",
+    )
     return parser
 
 
-def validate_arguments(arguments: argparse.Namespace) -> None:
+def validate_arguments(
+    arguments: argparse.Namespace,
+) -> None:
     """Validate CLI arguments."""
 
     if arguments.k <= 0:

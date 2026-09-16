@@ -1,9 +1,8 @@
+import sys
 from argparse import ArgumentParser
 from collections import defaultdict
-import sys
 
 from utils import open_text_auto, parse_variant_records
-
 
 ALLOWED_SV_TYPES = {"INS", "DEL"}
 
@@ -63,11 +62,18 @@ def preprocess_vcf(
 def build_parser() -> ArgumentParser:
     """Build the command-line parser."""
 
-    # fmt: off
-    parser = ArgumentParser(description="Keep INS/DEL records from a VCF and regenerate IDs as <chrom>.<type>.<index>.")
-    parser.add_argument("--variant-file-path", dest="variant_file_path", required=True, help="Input VCF")
-    parser.add_argument("--output-variant-file-path", dest="output_variant_file_path", required=True, help="Output preprocessed VCF")
-    # fmt: on
+    parser = ArgumentParser(
+        description="Keep INS/DEL records from a VCF and regenerate IDs as <chrom>.<type>.<index>."
+    )
+    parser.add_argument(
+        "--variant-file-path", dest="variant_file_path", required=True, help="Input VCF"
+    )
+    parser.add_argument(
+        "--output-variant-file-path",
+        dest="output_variant_file_path",
+        required=True,
+        help="Output preprocessed VCF",
+    )
     return parser
 
 

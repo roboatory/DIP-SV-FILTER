@@ -1,11 +1,15 @@
-import pysam
-
-import numpy as np
 from collections import defaultdict
 
-from extract_features import encode_region
+import numpy as np
+import pysam
+
+if __package__:
+    from .extract_features import encode_region
+else:
+    from extract_features import encode_region
 from multiprocessing.pool import Pool
 from pathlib import Path
+
 import tqdm
 
 pysam.set_verbosity(0)
@@ -17,7 +21,7 @@ def get_chromosome_lengths(
     """Read chromosome lengths from a FASTA index file."""
 
     chromosome_lengths = {}
-    with open(reference_index_path, "r", encoding="utf-8") as reference_index_file:
+    with Path(reference_index_path).open("r", encoding="utf-8") as reference_index_file:
         for line in reference_index_file:
             fields = line.strip().split("\t")
             chromosome_lengths[fields[0]] = int(fields[1])
@@ -389,14 +393,34 @@ def main(
 if __name__ == "__main__":
     import argparse
 
-    # fmt: off
-    parser = argparse.ArgumentParser(description="Generate labeled data for SV filtering")
+    parser = argparse.ArgumentParser(
+        description="Generate labeled data for SV filtering"
+    )
     parser.add_argument("--bam", dest="bam_file", required=True, help="Input BAM file")
-    parser.add_argument("--vcf", dest="variant_file_path", required=True, help="Input VCF file with SV calls")
-    parser.add_argument("--fai", dest="reference_index_path", required=True, help="FAI index file for the reference genome")
-    parser.add_argument("--output-directory", dest="output_directory", required=True, help="Directory to save the output feature files and labels")
-    parser.add_argument("--threads", type=int, default=4, help="Number of threads for parallel processing")
-    # fmt: on
+    parser.add_argument(
+        "--vcf",
+        dest="variant_file_path",
+        required=True,
+        help="Input VCF file with SV calls",
+    )
+    parser.add_argument(
+        "--fai",
+        dest="reference_index_path",
+        required=True,
+        help="FAI index file for the reference genome",
+    )
+    parser.add_argument(
+        "--output-directory",
+        dest="output_directory",
+        required=True,
+        help="Directory to save the output feature files and labels",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=4,
+        help="Number of threads for parallel processing",
+    )
     arguments = parser.parse_args()
 
     main(

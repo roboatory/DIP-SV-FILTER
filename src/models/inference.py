@@ -8,7 +8,10 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
-from architecture import SVHunterModel
+if __package__:
+    from .architecture import SVHunterModel
+else:
+    from architecture import SVHunterModel
 
 
 EXPECTED_INPUT_SHAPE = (2000, 9)
@@ -25,7 +28,12 @@ def get_default_device_name() -> str:
 
 
 class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
-    def __init__(self, split_directory: Path) -> None:
+    def __init__(
+        self,
+        split_directory: Path,
+    ) -> None:
+        """Discover and validate feature files for inference."""
+
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
         if not split_directory.is_dir():
@@ -44,10 +52,19 @@ class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
                     f"{sample_path} has shape {array.shape}, expected {EXPECTED_INPUT_SHAPE}"
                 )
 
-    def __len__(self) -> int:
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of feature windows."""
+
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[Tensor, str]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[Tensor, str]:
+        """Load one feature window and its filename."""
+
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
         return torch.from_numpy(features), sample_path.name
@@ -70,13 +87,18 @@ def create_inference_dataloader(
     )
 
 
-def format_prediction_vector(values: Tensor, decimal_places: int = 6) -> str:
+def format_prediction_vector(
+    values: Tensor,
+    decimal_places: int = 6,
+) -> str:
     """Format probability predictions as a comma-separated vector."""
 
     return ",".join(f"{value:.{decimal_places}f}" for value in values.tolist())
 
 
-def format_binary_prediction_vector(values: Tensor) -> str:
+def format_binary_prediction_vector(
+    values: Tensor,
+) -> str:
     """Format binary predictions as a comma-separated vector."""
 
     return ",".join(str(int(value)) for value in values.tolist())
@@ -176,16 +198,55 @@ def run_inference(
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
-    # fmt: off
     parser = argparse.ArgumentParser(description="Run SVHunter inference.")
-    parser.add_argument("--checkpoint-file-path", dest="checkpoint_file_path", type=Path, required=True, help="Path to the trained model checkpoint.")
-    parser.add_argument("--split-directory", dest="split_directory", type=Path, required=True, help="Directory containing .npy feature windows for inference.")
-    parser.add_argument("--output-file-path", dest="output_file_path", type=Path, required=True, help="Path to the output TSV file.")
-    parser.add_argument("--batch-size", dest="batch_size", type=int, default=64, help="Inference batch size.")
-    parser.add_argument("--worker-count", dest="worker_count", type=int, default=0, help="DataLoader worker processes.")
-    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Inference device, for example cpu, mps, or cuda.")
-    parser.add_argument("--prediction-threshold", dest="prediction_threshold", type=float, default=0.5, help="Threshold for converting probabilities into binary predictions.")
-    # fmt: on
+    parser.add_argument(
+        "--checkpoint-file-path",
+        dest="checkpoint_file_path",
+        type=Path,
+        required=True,
+        help="Path to the trained model checkpoint.",
+    )
+    parser.add_argument(
+        "--split-directory",
+        dest="split_directory",
+        type=Path,
+        required=True,
+        help="Directory containing .npy feature windows for inference.",
+    )
+    parser.add_argument(
+        "--output-file-path",
+        dest="output_file_path",
+        type=Path,
+        required=True,
+        help="Path to the output TSV file.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        dest="batch_size",
+        type=int,
+        default=64,
+        help="Inference batch size.",
+    )
+    parser.add_argument(
+        "--worker-count",
+        dest="worker_count",
+        type=int,
+        default=0,
+        help="DataLoader worker processes.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=get_default_device_name(),
+        help="Inference device, for example cpu, mps, or cuda.",
+    )
+    parser.add_argument(
+        "--prediction-threshold",
+        dest="prediction_threshold",
+        type=float,
+        default=0.5,
+        help="Threshold for converting probabilities into binary predictions.",
+    )
 
     return parser.parse_args()
 

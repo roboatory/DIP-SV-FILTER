@@ -73,7 +73,9 @@ class StructuralVariantCluster:
                     end = variant_breakpoint[1]
         return False
 
-    def get_genotype_combinations(self) -> list[list[tuple[int, int]]]:
+    def get_genotype_combinations(
+        self,
+    ) -> list[list[tuple[int, int]]]:
         """Return possible diploid genotype combinations for each variant."""
 
         # Mirrors hap-eval genotype-combination handling.
@@ -293,13 +295,8 @@ class StructuralVariantCluster:
             combination_count *= len(combination)
         if combination_count > 1024:
             print(
-                "%s:%d-%d too many phasing combos %d"
-                % (
-                    self.chromosome,
-                    self.breakpoints[0][0],
-                    self.breakpoints[-1][1],
-                    combination_count,
-                )
+                f"{self.chromosome}:{self.breakpoints[0][0]}-"
+                f"{self.breakpoints[-1][1]} too many phasing combos {combination_count}"
             )
             return
 
@@ -357,7 +354,7 @@ def construct_haplotypes(
     output_directory = Path(output_directory_path)
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    with open(reference_file_path, "r", encoding="utf-8") as reference_file_handle:
+    with Path(reference_file_path).open("r", encoding="utf-8") as reference_file_handle:
         StructuralVariantCluster.reference_file_handle = reference_file_handle
         StructuralVariantCluster.reference_index = reference_index
 
@@ -411,13 +408,23 @@ def construct_haplotypes(
 if __name__ == "__main__":
     from argparse import ArgumentParser
 
-    # fmt: off
     parser = ArgumentParser()
-    parser.add_argument("--variant-file-path", dest="variant_file_path", help="SORTED VCF")
-    parser.add_argument("--output-directory", dest="output_directory", help="Output directory")
-    parser.add_argument("--flank", "-f", default=5000, type=int, help="length of flanking reference sequence")
-    parser.add_argument("--reference-file-path", dest="reference_file_path", help="reference file")
-    # fmt: on
+    parser.add_argument(
+        "--variant-file-path", dest="variant_file_path", help="SORTED VCF"
+    )
+    parser.add_argument(
+        "--output-directory", dest="output_directory", help="Output directory"
+    )
+    parser.add_argument(
+        "--flank",
+        "-f",
+        default=5000,
+        type=int,
+        help="length of flanking reference sequence",
+    )
+    parser.add_argument(
+        "--reference-file-path", dest="reference_file_path", help="reference file"
+    )
 
     arguments = parser.parse_args()
 

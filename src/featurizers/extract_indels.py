@@ -1,14 +1,15 @@
 import argparse
+import re
+from multiprocessing import Process
+from pathlib import Path
+from typing import Literal
+
 import matplotlib
 import matplotlib.image as img
 import matplotlib.pyplot as plt
-from multiprocessing import Process
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import pysam
-import re
-from typing import Literal
 
 matplotlib.use("agg")
 
@@ -16,10 +17,13 @@ VariantTuple = tuple[str, int, int]
 SignatureTuple = tuple[int, int, str]
 
 
-def parse_vcf_file(vcf_file: str, chromosome: str) -> list[VariantTuple]:
+def parse_vcf_file(
+    vcf_file: str,
+    chromosome: str,
+) -> list[VariantTuple]:
     """Parse variants for one chromosome from a VCF-like file."""
 
-    with open(vcf_file, "r", encoding="utf-8") as file:
+    with Path(vcf_file).open("r", encoding="utf-8") as file:
         contents = file.readlines()
 
         chromosome_filter = [
@@ -137,16 +141,10 @@ def intra_alignment_extraction(
         variant_start_position = variant[1]
         variant_end_position = variant[1] + variant[2]
 
-        bed_file = open(
-            bed
-            + "/{}_{}_{}.bed".format(
-                chromosome, variant_start_position, variant_end_position
-            ),
-            "w",
-        )
-        bed_file.write(
-            "{}\t{}\t{}\t{}\t{}\n".format("CHROMOSOME", "START", "END", "READ", "TYPE")
-        )
+        bed_file = Path(
+            bed + f"/{chromosome}_{variant_start_position}_{variant_end_position}.bed"
+        ).open("w")
+        bed_file.write("CHROMOSOME\tSTART\tEND\tREAD\tTYPE\n")
 
         sam_file = pysam.AlignmentFile(bam_file, "rb")
 
@@ -240,13 +238,9 @@ def inter_alignment_extraction(
     variant_start_position = variant[1]
     variant_end_position = variant[1] + variant[2]
 
-    bed_file = open(
-        bed
-        + "/{}_{}_{}.bed".format(
-            chromosome, variant_start_position, variant_end_position
-        ),
-        "a",
-    )
+    bed_file = Path(
+        bed + f"/{chromosome}_{variant_start_position}_{variant_end_position}.bed"
+    ).open("a")
 
     for signature in split_read_signatures:
         signature_interval = (signature[0], signature[0] + signature[1])
@@ -263,7 +257,7 @@ def inter_alignment_extraction(
                 + "\t"
                 + signature[2]
                 + "\t"
-                + "INTER_{}".format(variant_type)
+                + f"INTER_{variant_type}"
                 + "\n"
             )
 
@@ -283,10 +277,7 @@ def visualize_alignments(
     variant_end_position = variant[1] + variant[2]
 
     read_alignments = pd.read_csv(
-        bed
-        + "/{}_{}_{}.bed".format(
-            chromosome, variant_start_position, variant_end_position
-        ),
+        bed + f"/{chromosome}_{variant_start_position}_{variant_end_position}.bed",
         sep="\t",
     )
     read_alignments["HEIGHT"] = read_alignments.groupby("READ").ngroup() + 2
@@ -296,9 +287,7 @@ def visualize_alignments(
         plt.plot(
             [row["START"], row["END"]],
             [row["HEIGHT"], row["HEIGHT"]],
-            color="orange"
-            if row["TYPE"] == "INTRA_{}".format(variant_type)
-            else "green",
+            color="orange" if row["TYPE"] == f"INTRA_{variant_type}" else "green",
         )
 
     plt.xticks(rotation="vertical")
@@ -309,9 +298,7 @@ def visualize_alignments(
 
     plt.savefig(
         images
-        + "/signatures/{}_{}_{}.png".format(
-            chromosome, variant_start_position, variant_end_position
-        )
+        + f"/signatures/{chromosome}_{variant_start_position}_{variant_end_position}.png"
     )
     plt.clf()
 
@@ -353,20 +340,16 @@ def encode_variant_as_matrix(
 
         mask = (
             [1] * (end_mask - start_mask)
-            if extraction == "INTRA_{}".format(variant_type)
+            if extraction == f"INTRA_{variant_type}"
             else [2] * (end_mask - start_mask)
         )
 
         read_vector[start_mask:end_mask] = mask
         return read_vector
 
-    with open(
-        bed
-        + "/{}_{}_{}.bed".format(
-            chromosome, variant_start_position, variant_end_position
-        ),
-        "r",
-    ) as bed_file:
+    with Path(
+        bed + f"/{chromosome}_{variant_start_position}_{variant_end_position}.bed"
+    ).open("r") as bed_file:
         _ = bed_file.readline()
 
         for read in bed_file:
@@ -469,9 +452,7 @@ def generate_encoding(
 
         img.imsave(
             images
-            + "/matrices/{}_{}_{}.png".format(
-                chromosome, variant_start_position, variant_end_position
-            ),
+            + f"/matrices/{chromosome}_{variant_start_position}_{variant_end_position}.png",
             image,
         )
 
@@ -509,9 +490,7 @@ def generate_encoding(
 
         img.imsave(
             images
-            + "/matrices/{}_{}_{}.png".format(
-                chromosome, variant_start_position, variant_end_position
-            ),
+            + f"/matrices/{chromosome}_{variant_start_position}_{variant_end_position}.png",
             image,
         )
 
@@ -519,17 +498,63 @@ def generate_encoding(
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
-    # fmt: off
-    parser = argparse.ArgumentParser(description="insertion & deletion signature extraction using CUTE-SV heuristics")
-    parser.add_argument("-b", "--bam", dest="bam_file", default="data/HG002_chr21.bam", help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)")
-    parser.add_argument("-c", "--chromosomes", default="chr21", help="limits signature extraction to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)")
-    parser.add_argument("-d", "--bed", default="output/bed", help="output BED directory (default: output/bed)")
-    parser.add_argument("-f", "--format", dest="encoding_format", default="counts", choices=["counts", "plot"], help="model input options (default: counts)")
-    parser.add_argument("-i", "--images", default="output/images", help="output image directory (default: output/images)")
-    parser.add_argument("-n", "--normalize", action="store_true", help="normalize matrices to a fixed width and height")
-    parser.add_argument("-t", "--type", dest="variant_type", default="DEL", choices=["DEL", "INS"], help="structural variant type (default: DEL)")
-    parser.add_argument("-v", "--vcf", dest="variant_file_path", default="data/labeling_test/HG002_variants.vcf", help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)")
-    # fmt: on
+    parser = argparse.ArgumentParser(
+        description="insertion & deletion signature extraction using CUTE-SV heuristics"
+    )
+    parser.add_argument(
+        "-b",
+        "--bam",
+        dest="bam_file",
+        default="data/HG002_chr21.bam",
+        help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)",
+    )
+    parser.add_argument(
+        "-c",
+        "--chromosomes",
+        default="chr21",
+        help="limits signature extraction to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)",
+    )
+    parser.add_argument(
+        "-d",
+        "--bed",
+        default="output/bed",
+        help="output BED directory (default: output/bed)",
+    )
+    parser.add_argument(
+        "-f",
+        "--format",
+        dest="encoding_format",
+        default="counts",
+        choices=["counts", "plot"],
+        help="model input options (default: counts)",
+    )
+    parser.add_argument(
+        "-i",
+        "--images",
+        default="output/images",
+        help="output image directory (default: output/images)",
+    )
+    parser.add_argument(
+        "-n",
+        "--normalize",
+        action="store_true",
+        help="normalize matrices to a fixed width and height",
+    )
+    parser.add_argument(
+        "-t",
+        "--type",
+        dest="variant_type",
+        default="DEL",
+        choices=["DEL", "INS"],
+        help="structural variant type (default: DEL)",
+    )
+    parser.add_argument(
+        "-v",
+        "--vcf",
+        dest="variant_file_path",
+        default="data/labeling_test/HG002_variants.vcf",
+        help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)",
+    )
 
     return parser.parse_args()
 
@@ -564,9 +589,7 @@ def launch_chromosome_extraction(
 
     for variant in variants:
         print(
-            "analyzing variant on {} with start position {} and end position {}".format(
-                variant[0], variant[1], variant[1] + variant[2]
-            )
+            f"analyzing variant on {variant[0]} with start position {variant[1]} and end position {variant[1] + variant[2]}"
         )
 
         intra_alignment_extraction(variant_type, bam_file, str(bed), variant)
@@ -589,7 +612,7 @@ def main() -> None:
 
     bam_file = arguments.bam_file
     chromosomes = (
-        ["chr{}".format(chromosome_number) for chromosome_number in range(1, 23)]
+        [f"chr{chromosome_number}" for chromosome_number in range(1, 23)]
         if arguments.chromosomes == "all"
         else arguments.chromosomes.split(",")
     )

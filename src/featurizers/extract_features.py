@@ -1,10 +1,9 @@
 import argparse
-from pathlib import Path
 import re
+from pathlib import Path
 
 import numpy as np
 import pysam
-
 
 FEATURE_CHANNEL_LABELS = [
     "MISMATCHCOUNT",
@@ -322,21 +321,71 @@ def write_feature_windows(
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
-    # fmt: off
-    parser = argparse.ArgumentParser(description="Generate MAMNET-style alignment features from a BAM region.")
-    parser.add_argument("positional_bam_file", nargs="?", help="path to sorted, indexed BAM file")
+    parser = argparse.ArgumentParser(
+        description="Generate MAMNET-style alignment features from a BAM region."
+    )
+    parser.add_argument(
+        "positional_bam_file", nargs="?", help="path to sorted, indexed BAM file"
+    )
     parser.add_argument("positional_contig", nargs="?", help="chromosome/contig name")
     parser.add_argument("positional_start", nargs="?", type=int, help="start position")
     parser.add_argument("positional_end", nargs="?", type=int, help="end position")
-    parser.add_argument("-b", "--bam", dest="bam_file", default="data/HG002_chr21.bam", help="input BAM file (default: data/HG002_chr21.bam)")
-    parser.add_argument("-c", "--contig", default="chr21", help="chromosome / contig name (default: chr21)")
-    parser.add_argument("-s", "--start", type=int, default=11019054, help="start position (0-based, default: 11019054)")
-    parser.add_argument("-e", "--end", type=int, default=11020031, help="end position (0-based, exclusive; default: 11020031)")
-    parser.add_argument("-w", "--window-size", dest="window_size", type=int, default=200, help="window size for feature tiling (default: 200)")
-    parser.add_argument("-o", "--output-directory", dest="output_directory", default="output/features", help="output directory for feature matrices and plots (default: output/features)")
-    parser.add_argument("--output-data-type", dest="output_data_type", choices=["float16", "float32"], default="float16", help="NumPy dtype for saved feature windows (default: float16)")
-    parser.add_argument("--plot-dots-per-inch", dest="plot_dots_per_inch", type=int, default=300, help="heatmap DPI; use 0 for matplotlib default (default: 300)")
-    # fmt: on
+    parser.add_argument(
+        "-b",
+        "--bam",
+        dest="bam_file",
+        default="data/HG002_chr21.bam",
+        help="input BAM file (default: data/HG002_chr21.bam)",
+    )
+    parser.add_argument(
+        "-c",
+        "--contig",
+        default="chr21",
+        help="chromosome / contig name (default: chr21)",
+    )
+    parser.add_argument(
+        "-s",
+        "--start",
+        type=int,
+        default=11019054,
+        help="start position (0-based, default: 11019054)",
+    )
+    parser.add_argument(
+        "-e",
+        "--end",
+        type=int,
+        default=11020031,
+        help="end position (0-based, exclusive; default: 11020031)",
+    )
+    parser.add_argument(
+        "-w",
+        "--window-size",
+        dest="window_size",
+        type=int,
+        default=200,
+        help="window size for feature tiling (default: 200)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-directory",
+        dest="output_directory",
+        default="output/features",
+        help="output directory for feature matrices and plots (default: output/features)",
+    )
+    parser.add_argument(
+        "--output-data-type",
+        dest="output_data_type",
+        choices=["float16", "float32"],
+        default="float16",
+        help="NumPy dtype for saved feature windows (default: float16)",
+    )
+    parser.add_argument(
+        "--plot-dots-per-inch",
+        dest="plot_dots_per_inch",
+        type=int,
+        default=300,
+        help="heatmap DPI; use 0 for matplotlib default (default: 300)",
+    )
     return parser.parse_args()
 
 

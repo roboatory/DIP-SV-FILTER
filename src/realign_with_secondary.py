@@ -8,7 +8,9 @@ from pathlib import Path
 import pysam
 
 
-def parse_cluster_from_fasta(fasta_path: str) -> tuple[str, int, int]:
+def parse_cluster_from_fasta(
+    fasta_path: str,
+) -> tuple[str, int, int]:
     """Parse ``chrom_start-end`` cluster coordinates from a FASTA basename."""
 
     stem = Path(fasta_path).stem
@@ -30,17 +32,21 @@ def parse_cluster_from_fasta(fasta_path: str) -> tuple[str, int, int]:
     return chromosome, start, end
 
 
-def cluster_name_from_fasta(fasta_path: str) -> str:
+def cluster_name_from_fasta(
+    fasta_path: str,
+) -> str:
     """Return the output basename derived from the input FASTA."""
 
     return Path(fasta_path).stem
 
 
-def count_fasta_records(fasta_path: str) -> int:
+def count_fasta_records(
+    fasta_path: str,
+) -> int:
     """Count records in a plain-text FASTA file."""
 
     count = 0
-    with open(fasta_path, "r", encoding="utf-8") as handle:
+    with Path(fasta_path).open("r", encoding="utf-8") as handle:
         for line in handle:
             if line.startswith(">"):
                 count += 1
@@ -51,7 +57,9 @@ def count_fasta_records(fasta_path: str) -> int:
     return count
 
 
-def sequence_priority(record: pysam.AlignedSegment) -> tuple[int, int, int]:
+def sequence_priority(
+    record: pysam.AlignedSegment,
+) -> tuple[int, int, int]:
     """Rank candidate records for choosing one sequence per read."""
 
     if not record.is_secondary and not record.is_supplementary:
@@ -103,7 +111,7 @@ def write_reads_fasta(
 ) -> None:
     """Write deduplicated read sequences to FASTA."""
 
-    with open(output_file_path, "w", encoding="utf-8") as handle:
+    with Path(output_file_path).open("w", encoding="utf-8") as handle:
         for read_name in sorted(read_sequences):
             sequence = read_sequences[read_name]
             handle.write(f">{read_name}\n")
@@ -140,7 +148,7 @@ def run_minimap2(
         command.append("-Y")
     command.extend([contig_fasta_path, reads_fasta_path])
 
-    with open(sam_file_path, "w", encoding="utf-8") as sam_file:
+    with Path(sam_file_path).open("w", encoding="utf-8") as sam_file:
         subprocess.run(command, stdout=sam_file, check=True)
 
 
@@ -157,7 +165,9 @@ def sort_and_index_alignment(
         pysam.index(bam_file_path)
 
 
-def realign_cluster(arguments: argparse.Namespace) -> str:
+def realign_cluster(
+    arguments: argparse.Namespace,
+) -> str:
     """Extract region-overlapping reads and realign them to constructed contigs."""
 
     if arguments.threads <= 0:
@@ -218,19 +228,55 @@ def realign_cluster(arguments: argparse.Namespace) -> str:
 def build_argument_parser() -> argparse.ArgumentParser:
     """Build the command-line interface."""
 
-    # fmt: off
-    parser = argparse.ArgumentParser(description="Extract one sequence per read from an original BAM over the cluster encoded in a constructed-contig FASTA name, then realign those reads to the constructed contigs with minimap2 secondary alignments enabled.")
-    parser.add_argument("--fasta", dest="fasta_path", required=True, help="Constructed contig FASTA")
-    parser.add_argument("--bam", dest="bam_file", required=True, help="Original read alignment BAM")
-    parser.add_argument("--output-directory", dest="output_directory", default=".", help="Output directory (default: current directory)")
-    parser.add_argument("--threads", "-t", type=int, default=1, help="Threads for minimap2 and sorting")
-    parser.add_argument("--minimap2", dest="minimap2_executable", default="minimap2", help="Path to minimap2 executable")
-    parser.add_argument("--preset", "-x", default="map-hifi", help="minimap2 -x preset (default: map-hifi)")
-    parser.add_argument("--soft-clip-supplementary", action="store_true", help="Add minimap2 -Y to soft-clip supplementary alignments")
-    parser.add_argument("--keep-reads", action="store_true", help="Keep the intermediate deduplicated reads FASTA")
-    parser.add_argument("--no-index", action="store_true", help="Do not create a BAM index")
-    parser.add_argument("--temporary-directory", dest="temporary_directory", default=None, help="Directory for temporary SAM files (default: output directory)")
-    # fmt: on
+    parser = argparse.ArgumentParser(
+        description="Extract one sequence per read from an original BAM over the cluster encoded in a constructed-contig FASTA name, then realign those reads to the constructed contigs with minimap2 secondary alignments enabled."
+    )
+    parser.add_argument(
+        "--fasta", dest="fasta_path", required=True, help="Constructed contig FASTA"
+    )
+    parser.add_argument(
+        "--bam", dest="bam_file", required=True, help="Original read alignment BAM"
+    )
+    parser.add_argument(
+        "--output-directory",
+        dest="output_directory",
+        default=".",
+        help="Output directory (default: current directory)",
+    )
+    parser.add_argument(
+        "--threads", "-t", type=int, default=1, help="Threads for minimap2 and sorting"
+    )
+    parser.add_argument(
+        "--minimap2",
+        dest="minimap2_executable",
+        default="minimap2",
+        help="Path to minimap2 executable",
+    )
+    parser.add_argument(
+        "--preset",
+        "-x",
+        default="map-hifi",
+        help="minimap2 -x preset (default: map-hifi)",
+    )
+    parser.add_argument(
+        "--soft-clip-supplementary",
+        action="store_true",
+        help="Add minimap2 -Y to soft-clip supplementary alignments",
+    )
+    parser.add_argument(
+        "--keep-reads",
+        action="store_true",
+        help="Keep the intermediate deduplicated reads FASTA",
+    )
+    parser.add_argument(
+        "--no-index", action="store_true", help="Do not create a BAM index"
+    )
+    parser.add_argument(
+        "--temporary-directory",
+        dest="temporary_directory",
+        default=None,
+        help="Directory for temporary SAM files (default: output directory)",
+    )
     return parser
 
 

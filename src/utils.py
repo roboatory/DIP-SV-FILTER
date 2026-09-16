@@ -1,6 +1,7 @@
 import gzip
 from collections.abc import Iterator
 from os import PathLike
+from pathlib import Path
 from typing import Any, TextIO
 
 import pysam
@@ -12,7 +13,7 @@ def read_fasta_index(
     """Read a FASTA index file into a dictionary keyed by chromosome."""
 
     reference_index = {}
-    with open(reference_index_path, "r", encoding="utf-8") as reference_index_file:
+    with Path(reference_index_path).open("r", encoding="utf-8") as reference_index_file:
         for line in reference_index_file:
             if line.startswith("#"):
                 continue
@@ -95,8 +96,8 @@ def open_text_auto(
     if str(path).endswith(".gz"):
         return gzip.open(path, mode)
     if "b" in mode:
-        return open(path, mode)
-    return open(path, mode, encoding="utf-8")
+        return Path(path).open(mode)
+    return Path(path).open(mode, encoding="utf-8")
 
 
 def infer_structural_variant_type(
