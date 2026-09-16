@@ -8,13 +8,18 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
-from architecture import SVHunterModel
+if __package__:
+    from .architecture import SVHunterModel
+else:
+    from architecture import SVHunterModel
 
 
 EXPECTED_INPUT_SHAPE = (2000, 9)
 
 
 def get_default_device_name() -> str:
+    """Return the best available torch device name."""
+
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -23,7 +28,12 @@ def get_default_device_name() -> str:
 
 
 class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
-    def __init__(self, split_directory: Path) -> None:
+    def __init__(
+        self,
+        split_directory: Path,
+    ) -> None:
+        """Discover and validate feature files for inference."""
+
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
         if not split_directory.is_dir():
@@ -42,10 +52,19 @@ class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
                     f"{sample_path} has shape {array.shape}, expected {EXPECTED_INPUT_SHAPE}"
                 )
 
-    def __len__(self) -> int:
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of feature windows."""
+
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[Tensor, str]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[Tensor, str]:
+        """Load one feature window and its filename."""
+
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
         return torch.from_numpy(features), sample_path.name
@@ -54,23 +73,34 @@ class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
 def create_inference_dataloader(
     split_directory: Path,
     batch_size: int,
-    num_workers: int,
+    worker_count: int,
 ) -> DataLoader[tuple[Tensor, list[str]]]:
+    """Create a deterministic inference dataloader."""
+
     dataset = SVInferenceDataset(split_directory=split_directory)
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=worker_count,
         pin_memory=torch.cuda.is_available(),
     )
 
 
-def format_prediction_vector(values: Tensor, decimal_places: int = 6) -> str:
+def format_prediction_vector(
+    values: Tensor,
+    decimal_places: int = 6,
+) -> str:
+    """Format probability predictions as a comma-separated vector."""
+
     return ",".join(f"{value:.{decimal_places}f}" for value in values.tolist())
 
 
-def format_binary_prediction_vector(values: Tensor) -> str:
+def format_binary_prediction_vector(
+    values: Tensor,
+) -> str:
+    """Format binary predictions as a comma-separated vector."""
+
     return ",".join(str(int(value)) for value in values.tolist())
 
 
@@ -78,6 +108,8 @@ def load_model_from_checkpoint(
     checkpoint_file_path: Path,
     device: torch.device,
 ) -> nn.Module:
+    """Load an SVHunter model from a checkpoint file."""
+
     checkpoint = torch.load(
         checkpoint_file_path,
         map_location=device,
@@ -95,6 +127,8 @@ def write_inference_file(
     probability_predictions: list[Tensor],
     binary_predictions: list[Tensor],
 ) -> None:
+    """Write inference predictions to a TSV file."""
+
     output_file_path.parent.mkdir(parents=True, exist_ok=True)
     with output_file_path.open("w", encoding="utf-8") as handle:
         handle.write("file_name\tpredicted_probabilities\tpredicted_labels\n")
@@ -116,10 +150,12 @@ def run_inference(
     split_directory: Path,
     output_file_path: Path,
     batch_size: int = 64,
-    num_workers: int = 0,
+    worker_count: int = 0,
     device_name: str = "cpu",
     prediction_threshold: float = 0.5,
 ) -> Path:
+    """Run checkpoint inference over a directory of feature matrices."""
+
     device = torch.device(device_name)
     model = load_model_from_checkpoint(
         checkpoint_file_path=checkpoint_file_path,
@@ -128,7 +164,7 @@ def run_inference(
     dataloader = create_inference_dataloader(
         split_directory=split_directory,
         batch_size=batch_size,
-        num_workers=num_workers,
+        worker_count=worker_count,
     )
 
     file_names: list[str] = []
@@ -159,30 +195,72 @@ def run_inference(
     return output_file_path
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run SVHunter inference.")
+def parse_arguments() -> argparse.Namespace:
+    """Parse command-line arguments."""
 
-    # fmt: off
-    parser.add_argument("--checkpoint_file_path", type=Path, required=True, help="Path to the trained model checkpoint.")
-    parser.add_argument("--split_directory", type=Path, required=True, help="Directory containing .npy feature windows for inference.")
-    parser.add_argument("--output_file_path", type=Path, required=True, help="Path to the output TSV file.")
-    parser.add_argument("--batch_size", type=int, default=64, help="Inference batch size.")
-    parser.add_argument("--num_workers", type=int, default=0, help="DataLoader worker processes.")
-    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Inference device, for example cpu, mps, or cuda.")
-    parser.add_argument("--prediction_threshold", type=float, default=0.5, help="Threshold for converting probabilities into binary predictions.")
-    # fmt: on
+    parser = argparse.ArgumentParser(description="Run SVHunter inference.")
+    parser.add_argument(
+        "--checkpoint-file-path",
+        dest="checkpoint_file_path",
+        type=Path,
+        required=True,
+        help="Path to the trained model checkpoint.",
+    )
+    parser.add_argument(
+        "--split-directory",
+        dest="split_directory",
+        type=Path,
+        required=True,
+        help="Directory containing .npy feature windows for inference.",
+    )
+    parser.add_argument(
+        "--output-file-path",
+        dest="output_file_path",
+        type=Path,
+        required=True,
+        help="Path to the output TSV file.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        dest="batch_size",
+        type=int,
+        default=64,
+        help="Inference batch size.",
+    )
+    parser.add_argument(
+        "--worker-count",
+        dest="worker_count",
+        type=int,
+        default=0,
+        help="DataLoader worker processes.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=get_default_device_name(),
+        help="Inference device, for example cpu, mps, or cuda.",
+    )
+    parser.add_argument(
+        "--prediction-threshold",
+        dest="prediction_threshold",
+        type=float,
+        default=0.5,
+        help="Threshold for converting probabilities into binary predictions.",
+    )
 
     return parser.parse_args()
 
 
 def main() -> None:
-    arguments = parse_args()
+    """Run the inference command-line interface."""
+
+    arguments = parse_arguments()
     output_file_path = run_inference(
         checkpoint_file_path=arguments.checkpoint_file_path,
         split_directory=arguments.split_directory,
         output_file_path=arguments.output_file_path,
         batch_size=arguments.batch_size,
-        num_workers=arguments.num_workers,
+        worker_count=arguments.worker_count,
         device_name=arguments.device,
         prediction_threshold=arguments.prediction_threshold,
     )

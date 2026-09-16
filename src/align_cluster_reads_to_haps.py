@@ -3,7 +3,7 @@
 Align cluster reads to retained pseudo-haplotype FASTA files.
 
 This helper consumes the output directory produced by
-``bin/kmer_filter_contig_pairs.py``. For each cluster directory, it expects:
+``src/filter_contig_pairs.py``. For each cluster directory, it expects:
 
     cluster_reads.fasta
     hap_fastas/<hap_id>.fasta
@@ -103,7 +103,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_preset(preset: str) -> str:
+def normalize_preset(
+    preset: str,
+) -> str:
     """Normalize common short read-type aliases to minimap2 preset names."""
 
     aliases = {
@@ -115,7 +117,9 @@ def normalize_preset(preset: str) -> str:
     return aliases.get(preset, preset)
 
 
-def discover_cluster_dirs(root: Path) -> List[Path]:
+def discover_cluster_dirs(
+    root: Path,
+) -> List[Path]:
     """Find cluster directories with the expected k-mer prefilter outputs."""
 
     if not root.is_dir():
@@ -131,7 +135,10 @@ def discover_cluster_dirs(root: Path) -> List[Path]:
     return clusters
 
 
-def discover_tasks(cluster_root: Path, output_subdir: str) -> List[AlignmentTask]:
+def discover_tasks(
+    cluster_root: Path,
+    output_subdir: str,
+) -> List[AlignmentTask]:
     """Create one alignment task per cluster/haplotype FASTA."""
 
     tasks: List[AlignmentTask] = []
@@ -154,14 +161,23 @@ def discover_tasks(cluster_root: Path, output_subdir: str) -> List[AlignmentTask
     return tasks
 
 
-def bam_is_complete(path: Path) -> bool:
+def bam_is_complete(
+    path: Path,
+) -> bool:
     """Return True if a BAM and its index both exist and are non-empty."""
 
     bai_path = Path(str(path) + ".bai")
-    return path.is_file() and path.stat().st_size > 0 and bai_path.is_file() and bai_path.stat().st_size > 0
+    return (
+        path.is_file()
+        and path.stat().st_size > 0
+        and bai_path.is_file()
+        and bai_path.stat().st_size > 0
+    )
 
 
-def run_command(command: List[str]) -> None:
+def run_command(
+    command: List[str],
+) -> None:
     """Run a command and raise a clear error if it fails."""
 
     subprocess.run(command, check=True)
@@ -202,7 +218,9 @@ def align_one_task(
     """Run minimap2 for one haplotype FASTA and create sorted/indexed BAM."""
 
     if not overwrite and bam_is_complete(task.output_bam):
-        return AlignmentResult(task.cluster_name, task.hap_fasta.stem, task.output_bam, skipped=True)
+        return AlignmentResult(
+            task.cluster_name, task.hap_fasta.stem, task.output_bam, skipped=True
+        )
 
     task.output_bam.parent.mkdir(parents=True, exist_ok=True)
     task.output_bam.unlink(missing_ok=True)
@@ -236,7 +254,9 @@ def align_one_task(
         sorted_bam.replace(task.output_bam)
         Path(str(sorted_bam) + ".bai").replace(Path(str(task.output_bam) + ".bai"))
 
-    return AlignmentResult(task.cluster_name, task.hap_fasta.stem, task.output_bam, skipped=False)
+    return AlignmentResult(
+        task.cluster_name, task.hap_fasta.stem, task.output_bam, skipped=False
+    )
 
 
 def run_tasks(
@@ -250,12 +270,17 @@ def run_tasks(
 
     task_list = list(tasks)
     if jobs == 1:
-        return [align_one_task(task, preset, minimap2_threads, overwrite) for task in task_list]
+        return [
+            align_one_task(task, preset, minimap2_threads, overwrite)
+            for task in task_list
+        ]
 
     results: List[AlignmentResult] = []
     with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as executor:
         future_to_task = {
-            executor.submit(align_one_task, task, preset, minimap2_threads, overwrite): task
+            executor.submit(
+                align_one_task, task, preset, minimap2_threads, overwrite
+            ): task
             for task in task_list
         }
         for future in concurrent.futures.as_completed(future_to_task):

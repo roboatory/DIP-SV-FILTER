@@ -24,7 +24,13 @@ except ImportError:
 
 
 class SVFalseSampleDataset(Dataset[tuple[Tensor, Tensor, str]]):
-    def __init__(self, split_directory: Path, labels_file_path: Path) -> None:
+    def __init__(
+        self,
+        split_directory: Path,
+        labels_file_path: Path,
+    ) -> None:
+        """Initialize and validate the dataset or accumulator."""
+
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
         if not split_directory.is_dir():
@@ -37,17 +43,28 @@ class SVFalseSampleDataset(Dataset[tuple[Tensor, Tensor, str]]):
                 f"No .npy files found in split directory: {split_directory}"
             )
 
-        missing_labels = [path.name for path in self.samples if path.name not in self.labels]
+        missing_labels = [
+            path.name for path in self.samples if path.name not in self.labels
+        ]
         if missing_labels:
             preview = ", ".join(missing_labels[:5])
             raise ValueError(
                 f"Missing labels for {len(missing_labels)} files in {split_directory}: {preview}"
             )
 
-    def __len__(self) -> int:
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of feature windows."""
+
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor, str]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[Tensor, Tensor, str]:
+        """Load a feature window and its associated metadata."""
+
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
         if features.shape != EXPECTED_INPUT_SHAPE:
@@ -64,6 +81,8 @@ def create_false_sample_dataloader(
     batch_size: int,
     num_workers: int,
 ) -> DataLoader[tuple[Tensor, Tensor, tuple[str, ...]]]:
+    """Create a dataloader for labeled prediction diagnostics."""
+
     dataset = SVFalseSampleDataset(
         split_directory=split_directory,
         labels_file_path=labels_file_path,
@@ -77,7 +96,11 @@ def create_false_sample_dataloader(
     )
 
 
-def format_binary_vector(values: Tensor) -> str:
+def format_binary_vector(
+    values: Tensor,
+) -> str:
+    """Format a binary tensor as comma-separated values."""
+
     return ",".join(str(int(value)) for value in values.tolist())
 
 
@@ -86,6 +109,8 @@ def resolve_split_labels_file_path(
     split_directory: Path,
     labels_file_path: Path | None,
 ) -> Path:
+    """Resolve the labels file used for this split."""
+
     return resolve_labels_file_path(
         split_directory=split_directory,
         labels_file_path=labels_file_path,
@@ -103,6 +128,8 @@ def export_false_samples_for_split(
     num_workers: int,
     prediction_threshold: float,
 ) -> Path:
+    """Write predictions and labels for misclassified windows."""
+
     resolved_labels_file_path = resolve_split_labels_file_path(
         split_name=split_name,
         split_directory=split_directory,
@@ -130,11 +157,15 @@ def export_false_samples_for_split(
                     dtype=torch.float32,
                     non_blocking=True,
                 )
-                labels = labels.to(device=device, dtype=torch.float32, non_blocking=True)
+                labels = labels.to(
+                    device=device, dtype=torch.float32, non_blocking=True
+                )
 
                 logits = model(features)
                 probabilities = torch.sigmoid(logits)
-                predictions = (probabilities >= prediction_threshold).to(dtype=torch.int64)
+                predictions = (probabilities >= prediction_threshold).to(
+                    dtype=torch.int64
+                )
                 targets = labels.to(dtype=torch.int64)
                 mismatched_samples = (predictions != targets).any(dim=1)
 
@@ -160,6 +191,8 @@ def export_false_samples_for_split(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     parser = argparse.ArgumentParser(
         description="Export misclassified samples for train/validation/test splits."
     )
@@ -167,33 +200,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint_file_path",
         type=Path,
-        default=Path(
-            r"D:\DailyUse\LEARN\Projects\SV_Filter\variant_detection-classifier_Rohit\best_model.pt"
-        ),
+        required=True,
         help="Path to the trained model checkpoint.",
     )
     parser.add_argument(
         "--train_directory",
         type=Path,
-        default=Path(
-            r"D:\DailyUse\LEARN\Projects\SV_Filter\labeling_test\training_data"
-        ),
+        required=True,
         help="Directory of training .npy files.",
     )
     parser.add_argument(
         "--validation_directory",
         type=Path,
-        default=Path(
-            r"D:\DailyUse\LEARN\Projects\SV_Filter\labeling_test\validation_data"
-        ),
+        required=True,
         help="Directory of validation .npy files.",
     )
     parser.add_argument(
         "--test_directory",
         type=Path,
-        default=Path(
-            r"D:\DailyUse\LEARN\Projects\SV_Filter\labeling_test\testing_data"
-        ),
+        required=True,
         help="Directory of test .npy files.",
     )
     parser.add_argument(
@@ -205,9 +230,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_directory",
         type=Path,
-        default=Path(
-            r"D:\DailyUse\LEARN\Projects\SV_Filter\variant_detection-classifier_Rohit"
-        ),
+        required=True,
         help="Directory to write TSV outputs.",
     )
     parser.add_argument(
@@ -238,6 +261,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run the command-line workflow."""
+
     arguments = parse_args()
     device = torch.device(arguments.device)
     model = load_model_from_checkpoint(

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import torch
-from torch import Tensor, nn
 import torch.nn.functional as F
+from torch import Tensor, nn
 
 
 class SVHunterSubwindowEncoder(nn.Module):
-    def __init__(self, num_features: int = 9) -> None:
+    def __init__(
+        self,
+        feature_count: int = 9,
+    ) -> None:
+        """Initialize the convolutional subwindow encoder."""
+
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv2d(1, 128, kernel_size=(1, num_features), padding="valid"),  # 200
+            nn.Conv2d(1, 128, kernel_size=(1, feature_count), padding="valid"),  # 200
             nn.MaxPool2d(kernel_size=(2, 1)),  # 100
             nn.Conv2d(128, 64, kernel_size=(3, 1), padding="valid"),  # 98
             nn.MaxPool2d(kernel_size=(2, 1)),  # 49
@@ -27,24 +32,31 @@ class SVHunterSubwindowEncoder(nn.Module):
         )
         self.output_dimension = 64
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.layers(x)
-        return torch.flatten(x, start_dim=1)
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
+        """Encode one batch of subwindows into flat CNN embeddings."""
+
+        encoded_inputs = self.layers(inputs)
+        return torch.flatten(encoded_inputs, start_dim=1)
 
 
 class SVHunterMultiHeadAttention(nn.Module):
     def __init__(
         self,
         embedding_dimension: int = 100,
-        num_heads: int = 32,
+        attention_head_count: int = 32,
         key_dimension: int = 32,
         dropout: float = 0.3,
     ) -> None:
+        """Initialize the attention projections and dropout rate."""
+
         super().__init__()
         self.embedding_dimension = embedding_dimension
-        self.num_heads = num_heads
+        self.attention_head_count = attention_head_count
         self.key_dimension = key_dimension
-        self.attention_inner_dimension = num_heads * key_dimension
+        self.attention_inner_dimension = attention_head_count * key_dimension
         self.query_projection = nn.Linear(
             embedding_dimension, self.attention_inner_dimension
         )
@@ -59,16 +71,30 @@ class SVHunterMultiHeadAttention(nn.Module):
         )
         self.dropout = dropout
 
-    def forward(self, x: Tensor) -> Tensor:
-        batch_size, seq_len, _ = x.shape
-        query = self.query_projection(x).view(
-            batch_size, seq_len, self.num_heads, self.key_dimension
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
+        """Apply multi-head scaled dot-product self-attention."""
+
+        batch_size, sequence_length, _ = inputs.shape
+        query = self.query_projection(inputs).view(
+            batch_size,
+            sequence_length,
+            self.attention_head_count,
+            self.key_dimension,
         )
-        key = self.key_projection(x).view(
-            batch_size, seq_len, self.num_heads, self.key_dimension
+        key = self.key_projection(inputs).view(
+            batch_size,
+            sequence_length,
+            self.attention_head_count,
+            self.key_dimension,
         )
-        value = self.value_projection(x).view(
-            batch_size, seq_len, self.num_heads, self.key_dimension
+        value = self.value_projection(inputs).view(
+            batch_size,
+            sequence_length,
+            self.attention_head_count,
+            self.key_dimension,
         )
 
         query = query.transpose(1, 2)
@@ -83,7 +109,7 @@ class SVHunterMultiHeadAttention(nn.Module):
         )
         attention_output = attention_output.transpose(1, 2).contiguous()
         attention_output = attention_output.view(
-            batch_size, seq_len, self.attention_inner_dimension
+            batch_size, sequence_length, self.attention_inner_dimension
         )
         return self.output_projection(attention_output)
 
@@ -92,15 +118,17 @@ class SVHunterTransformerBlock(nn.Module):
     def __init__(
         self,
         embedding_dimension: int = 100,
-        num_heads: int = 32,
+        attention_head_count: int = 32,
         key_dimension: int = 32,
         dropout: float = 0.3,
     ) -> None:
+        """Initialize the attention and feed-forward layers."""
+
         super().__init__()
         self.layer_normalization_1 = nn.LayerNorm(embedding_dimension)
         self.attention = SVHunterMultiHeadAttention(
             embedding_dimension=embedding_dimension,
-            num_heads=num_heads,
+            attention_head_count=attention_head_count,
             key_dimension=key_dimension,
             dropout=dropout,
         )
@@ -114,54 +142,59 @@ class SVHunterTransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = x + self.attention(self.layer_normalization_1(x))
-        x = x + self.feed_forward_network(self.layer_normalization_2(x))
-        return x
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
+        """Apply one residual transformer block."""
+
+        attended_inputs = inputs + self.attention(self.layer_normalization_1(inputs))
+        return attended_inputs + self.feed_forward_network(
+            self.layer_normalization_2(attended_inputs)
+        )
 
 
 class SVHunterModel(nn.Module):
     def __init__(
         self,
         input_length: int = 2000,
-        num_features: int = 9,
+        feature_count: int = 9,
         subwindow_size: int = 200,
-        num_subwindows: int = 10,
-        embedding_dimension: int = 128,
-        num_heads: int = 4,
+        subwindow_count: int = 10,
+        embedding_dimension: int = 100,
+        attention_head_count: int = 4,
         key_dimension: int = 32,
-        num_transformer_blocks: int = 4,
-        multilayer_perceptron_hidden_dimension: int = 384,
-        attention_dropout: float = 0.1,
-        head_dropout: float = 0.2,
+        transformer_block_count: int = 3,
+        multilayer_perceptron_hidden_dimension: int = 128,
+        attention_dropout: float = 0.3,
+        head_dropout: float = 0.4,
     ) -> None:
+        """Initialize the CNN-Transformer classifier."""
+
         super().__init__()
-        if input_length != subwindow_size * num_subwindows:
-            raise ValueError("input_length must equal subwindow_size * num_subwindows")
+        if input_length != subwindow_size * subwindow_count:
+            raise ValueError("input_length must equal subwindow_size * subwindow_count")
 
         self.input_length = input_length
-        self.num_features = num_features
+        self.feature_count = feature_count
         self.subwindow_size = subwindow_size
-        self.num_subwindows = num_subwindows
-        self.input_norm = nn.LayerNorm(num_features)
-        self.input_pos_embedding = nn.Parameter(torch.zeros(1, input_length, 1))
-        nn.init.normal_(self.input_pos_embedding, std=0.02)
-        self.encoder = SVHunterSubwindowEncoder(num_features=num_features + 1)
+        self.subwindow_count = subwindow_count
+        self.encoder = SVHunterSubwindowEncoder(feature_count=feature_count)
         self.patch_projection = nn.Linear(
             self.encoder.output_dimension, embedding_dimension
         )
         self.position_embedding = nn.Parameter(
-            torch.zeros(1, num_subwindows, embedding_dimension)
+            torch.zeros(1, subwindow_count, embedding_dimension)
         )
         self.transformer_blocks = nn.ModuleList(
             [
                 SVHunterTransformerBlock(
                     embedding_dimension=embedding_dimension,
-                    num_heads=num_heads,
+                    attention_head_count=attention_head_count,
                     key_dimension=key_dimension,
                     dropout=attention_dropout,
                 )
-                for _ in range(num_transformer_blocks)
+                for _ in range(transformer_block_count)
             ]
         )
         self.sequence_normalization = nn.LayerNorm(embedding_dimension)
@@ -181,33 +214,46 @@ class SVHunterModel(nn.Module):
             nn.Linear(multilayer_perceptron_hidden_dimension, 1),
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        if x.ndim != 3:
+    def forward(
+        self,
+        inputs: Tensor,
+    ) -> Tensor:
+        """Predict subwindow-level structural variant logits."""
+
+        if inputs.ndim != 3:
             raise ValueError("Expected input shape (batch, 2000, 9)")
-        if x.shape[1] != self.input_length or x.shape[2] != self.num_features:
+        if (
+            inputs.shape[1] != self.input_length
+            or inputs.shape[2] != self.feature_count
+        ):
             raise ValueError(
-                f"Expected input shape (batch, {self.input_length}, {self.num_features})"
+                f"Expected input shape (batch, {self.input_length}, {self.feature_count})"
             )
 
-        batch_size = x.shape[0]
-        x = self.input_norm(x)
-        x = torch.cat([x, self.input_pos_embedding.expand(batch_size, -1, -1)], dim=-1)
-        x = x.view(
-            batch_size, self.num_subwindows, self.subwindow_size, self.num_features + 1
+        batch_size = inputs.shape[0]
+        subwindow_inputs = inputs.view(
+            batch_size,
+            self.subwindow_count,
+            self.subwindow_size,
+            self.feature_count,
         )
-        x = x.unsqueeze(2).reshape(
-            batch_size * self.num_subwindows,
+        subwindow_inputs = subwindow_inputs.unsqueeze(2).reshape(
+            batch_size * self.subwindow_count,
             1,
             self.subwindow_size,
-            self.num_features + 1,
+            self.feature_count,
         )
-        x = self.encoder(x)
-        x = x.view(batch_size, self.num_subwindows, self.encoder.output_dimension)
-        x = self.patch_projection(x)
-        x = x + self.position_embedding
+        subwindow_embeddings = self.encoder(subwindow_inputs)
+        subwindow_embeddings = subwindow_embeddings.view(
+            batch_size,
+            self.subwindow_count,
+            self.encoder.output_dimension,
+        )
+        subwindow_embeddings = self.patch_projection(subwindow_embeddings)
+        subwindow_embeddings = subwindow_embeddings + self.position_embedding
 
         for block in self.transformer_blocks:
-            x = block(x)
+            subwindow_embeddings = block(subwindow_embeddings)
 
-        x = self.sequence_normalization(x)
-        return self.classifier(x).squeeze(-1)
+        subwindow_embeddings = self.sequence_normalization(subwindow_embeddings)
+        return self.classifier(subwindow_embeddings).squeeze(-1)

@@ -10,7 +10,6 @@ from typing import Any
 import numpy as np
 import torch
 from torch import Tensor, nn
-# from torch.optim import Adam
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 
@@ -25,6 +24,8 @@ EXPECTED_LABEL_LENGTH = 10
 
 
 def get_default_device_name() -> str:
+    """Return the best available torch device name."""
+
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -32,7 +33,11 @@ def get_default_device_name() -> str:
     return "cpu"
 
 
-def set_seed(seed: int) -> None:
+def set_seed(
+    seed: int,
+) -> None:
+    """Seed Python, NumPy, and torch random number generators."""
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -40,11 +45,20 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def safe_divide(numerator: float, denominator: float) -> float:
+def safe_divide(
+    numerator: float,
+    denominator: float,
+) -> float:
+    """Divide two values and return zero for a zero denominator."""
+
     return numerator / denominator if denominator else 0.0
 
 
-def parse_label_vector(label_text: str) -> Tensor:
+def parse_label_vector(
+    label_text: str,
+) -> Tensor:
+    """Parse one comma-separated binary label vector."""
+
     label_parts = [label_part.strip() for label_part in label_text.split(",")]
     if len(label_parts) != EXPECTED_LABEL_LENGTH:
         raise ValueError(
@@ -59,7 +73,11 @@ def parse_label_vector(label_text: str) -> Tensor:
     return torch.tensor(values, dtype=torch.float32)
 
 
-def load_labels(labels_file_path: Path) -> dict[str, Tensor]:
+def load_labels(
+    labels_file_path: Path,
+) -> dict[str, Tensor]:
+    """Load labels from a labels.txt file."""
+
     if not labels_file_path.exists():
         raise FileNotFoundError(f"Labels file not found: {labels_file_path}")
 
@@ -89,7 +107,13 @@ def load_labels(labels_file_path: Path) -> dict[str, Tensor]:
 
 
 class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
-    def __init__(self, split_directory: Path, labels: dict[str, Tensor]) -> None:
+    def __init__(
+        self,
+        split_directory: Path,
+        labels: dict[str, Tensor],
+    ) -> None:
+        """Initialize and validate the dataset or accumulator."""
+
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
         if not split_directory.is_dir():
@@ -111,18 +135,19 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
         self.samples = [path for path in files if path.name in labels]
         self.labels = labels
 
-        ## took a long time to check all files, so skipping for now. Relying on the fact that the data generation script is correct and consistent with labels.txt
-        # for sample_path in self.samples:
-        #     array = np.load(sample_path, mmap_mode="r")
-        #     if array.shape != EXPECTED_INPUT_SHAPE:
-        #         raise ValueError(
-        #             f"{sample_path} has shape {array.shape}, expected {EXPECTED_INPUT_SHAPE}"
-        #         )
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of feature windows."""
 
-    def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Load a feature window and its associated metadata."""
+
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
         labels = self.labels[sample_path.name]
@@ -143,7 +168,11 @@ class EpochMetrics:
 
 
 class MetricsAccumulator:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+    ) -> None:
+        """Initialize and validate the dataset or accumulator."""
+
         self.loss_sum = 0.0
         self.sample_count = 0
         self.elementwise_true_positives = 0
@@ -156,7 +185,14 @@ class MetricsAccumulator:
         self.any_sv_false_positives = 0
         self.any_sv_false_negatives = 0
 
-    def update(self, loss: float, logits: Tensor, labels: Tensor) -> None:
+    def update(
+        self,
+        loss: float,
+        logits: Tensor,
+        labels: Tensor,
+    ) -> None:
+        """Accumulate batch loss and prediction counts."""
+
         batch_size = labels.shape[0]
         self.loss_sum += loss * batch_size
         self.sample_count += batch_size
@@ -190,7 +226,11 @@ class MetricsAccumulator:
             ((any_predictions == 0) & (any_targets == 1)).sum().item()
         )
 
-    def compute(self) -> EpochMetrics:
+    def compute(
+        self,
+    ) -> EpochMetrics:
+        """Compute aggregate epoch metrics."""
+
         elementwise_precision = safe_divide(
             self.elementwise_true_positives,
             self.elementwise_true_positives + self.elementwise_false_positives,
@@ -238,6 +278,8 @@ def create_dataloader(
     shuffle: bool,
     num_workers: int,
 ) -> DataLoader[tuple[Tensor, Tensor]]:
+    """Create a labeled feature-window dataloader."""
+
     resolved_labels_file_path = resolve_labels_file_path(
         split_directory=split_directory,
         labels_file_path=labels_file_path,
@@ -257,6 +299,8 @@ def resolve_labels_file_path(
     split_directory: Path,
     labels_file_path: Path | None,
 ) -> Path:
+    """Resolve labels.txt from a split directory or its parent."""
+
     if labels_file_path is not None:
         return labels_file_path
 
@@ -278,9 +322,10 @@ def run_epoch(
     dataloader: DataLoader[tuple[Tensor, Tensor]],
     criterion: nn.Module,
     device: torch.device,
-    # optimizer: Adam | None = None,
     optimizer: AdamW | None = None,
 ) -> EpochMetrics:
+    """Run one training or evaluation epoch."""
+
     training = optimizer is not None
     model.train(training)
     accumulator = MetricsAccumulator()
@@ -306,12 +351,13 @@ def run_epoch(
 def save_checkpoint(
     path: Path,
     model: nn.Module,
-    # optimizer: Adam,
     optimizer: AdamW,
     epoch: int,
     metrics: EpochMetrics,
     args: argparse.Namespace,
 ) -> None:
+    """Save a model checkpoint."""
+
     serialized_args = {
         key: str(value) if isinstance(value, Path) else value
         for key, value in vars(args).items()
@@ -326,42 +372,88 @@ def save_checkpoint(
     torch.save(checkpoint, path)
 
 
-def write_json(output_file_path: Path, payload: Any) -> None:
+def write_json(
+    output_file_path: Path,
+    payload: Any,
+) -> None:
+    """Write a JSON payload to disk."""
+
     with output_file_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     parser = argparse.ArgumentParser(description="Train the adapted SVHunter model.")
 
-    # fmt: off
-    parser.add_argument("--train_directory", dest="train_directory", type=Path, required=True, help="Directory of training .npy files.")
-    parser.add_argument("--validation_directory", dest="validation_directory", type=Path, required=True, help="Directory of validation .npy files.")
-    parser.add_argument("--test_directory", dest="test_directory", type=Path, required=True, help="Directory of test .npy files.")
-    parser.add_argument("--output_directory", dest="output_directory", type=Path, required=True, help="Directory for checkpoints and metrics.")
-    parser.add_argument("--labels_file_path", dest="labels_file_path", type=Path, default=None, help="Optional path to a shared labels.txt. If omitted, labels.txt is resolved per split.")
+    parser.add_argument(
+        "--train_directory",
+        dest="train_directory",
+        type=Path,
+        required=True,
+        help="Directory of training .npy files.",
+    )
+    parser.add_argument(
+        "--validation_directory",
+        dest="validation_directory",
+        type=Path,
+        required=True,
+        help="Directory of validation .npy files.",
+    )
+    parser.add_argument(
+        "--test_directory",
+        dest="test_directory",
+        type=Path,
+        required=True,
+        help="Directory of test .npy files.",
+    )
+    parser.add_argument(
+        "--output_directory",
+        dest="output_directory",
+        type=Path,
+        required=True,
+        help="Directory for checkpoints and metrics.",
+    )
+    parser.add_argument(
+        "--labels_file_path",
+        dest="labels_file_path",
+        type=Path,
+        default=None,
+        help="Optional path to a shared labels.txt. If omitted, labels.txt is resolved per split.",
+    )
 
-    # parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs.")
-    # parser.add_argument("--batch_size", type=int, default=32, help="Batch size.")
-    # parser.add_argument("--learning_rate", type=float, default=1e-4, help="Adam learning rate.")
-    parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs.")
+    parser.add_argument(
+        "--epochs", type=int, default=30, help="Number of training epochs."
+    )
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size.")
-    parser.add_argument("--learning_rate", type=float, default=2e-4, help="Adam learning rate.")
+    parser.add_argument(
+        "--learning_rate", type=float, default=2e-4, help="Adam learning rate."
+    )
 
-    # parser.add_argument("--weight_decay", type=float, default=0, help="Adam weight decay.")\
-    # parser.add_argument("--num_workers", type=int, default=0, help="DataLoader worker processes.")
-
-    parser.add_argument("--weight_decay", type=float, default=1e-3, help="Adam weight decay.")
-    parser.add_argument("--num_workers", type=int, default=12, help="DataLoader worker processes.")
+    parser.add_argument(
+        "--weight_decay", type=float, default=1e-3, help="Adam weight decay."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=12, help="DataLoader worker processes."
+    )
 
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Training device, for example cpu, mps, or cuda.")
-    # fmt: on
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=get_default_device_name(),
+        help="Training device, for example cpu, mps, or cuda.",
+    )
 
     return parser.parse_args()
 
 
-def train(arguments: argparse.Namespace) -> dict[str, Any]:
+def train(
+    arguments: argparse.Namespace,
+) -> dict[str, Any]:
+    """Train the model and return run summary metrics."""
+
     set_seed(arguments.seed)
     arguments.output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -390,11 +482,6 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
     device = torch.device(arguments.device)
     model = SVHunterModel().to(device)
     criterion = nn.BCEWithLogitsLoss()
-    # optimizer = Adam(
-    #     model.parameters(),
-    #     lr=arguments.learning_rate,
-    #     weight_decay=arguments.weight_decay,
-    # )
     optimizer = AdamW(
         model.parameters(),
         lr=arguments.learning_rate,
@@ -494,6 +581,8 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Run the command-line workflow."""
+
     arguments = parse_args()
     train(arguments)
 

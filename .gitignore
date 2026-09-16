@@ -6,7 +6,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-.pytest_cache/
 .ruff_cache/
 .env
 .env.*
@@ -15,3 +14,16 @@ build/
 data/
 *output*/
 wandb/
+/models/
+
+/plans/
+
+# Local agent instructions and configuration
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+CLAUDE.local.md
+.agents/
+.claude/
+.codex/
+/skills/

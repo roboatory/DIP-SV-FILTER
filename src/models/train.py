@@ -26,6 +26,8 @@ EXPECTED_LABEL_LENGTH = 10
 
 
 def get_default_device_name() -> str:
+    """Return the best available torch device name."""
+
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -33,7 +35,11 @@ def get_default_device_name() -> str:
     return "cpu"
 
 
-def set_seed(seed: int) -> None:
+def set_seed(
+    seed: int,
+) -> None:
+    """Seed Python, NumPy, and torch random number generators."""
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -41,22 +47,40 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def safe_divide(numerator: float, denominator: float) -> float:
+def safe_divide(
+    numerator: float,
+    denominator: float,
+) -> float:
+    """Divide two values and return zero for a zero denominator."""
+
     return numerator / denominator if denominator else 0.0
 
 
-def serialize_arguments(arguments: argparse.Namespace) -> dict[str, Any]:
+def serialize_arguments(
+    arguments: argparse.Namespace,
+) -> dict[str, Any]:
+    """Convert argparse values into JSON-serializable strings when needed."""
+
     return {
         key: str(value) if isinstance(value, Path) else value
         for key, value in vars(arguments).items()
     }
 
 
-def prefix_metrics(prefix: str, metrics: EpochMetrics) -> dict[str, float]:
+def prefix_metrics(
+    prefix: str,
+    metrics: EpochMetrics,
+) -> dict[str, float]:
+    """Prefix metric keys for grouped logging."""
+
     return {f"{prefix}/{key}": value for key, value in asdict(metrics).items()}
 
 
-def parse_label_vector(label_text: str) -> Tensor:
+def parse_label_vector(
+    label_text: str,
+) -> Tensor:
+    """Parse one comma-separated binary label vector."""
+
     label_parts = [label_part.strip() for label_part in label_text.split(",")]
     if len(label_parts) != EXPECTED_LABEL_LENGTH:
         raise ValueError(
@@ -71,7 +95,11 @@ def parse_label_vector(label_text: str) -> Tensor:
     return torch.tensor(values, dtype=torch.float32)
 
 
-def load_labels(labels_file_path: Path) -> dict[str, Tensor]:
+def load_labels(
+    labels_file_path: Path,
+) -> dict[str, Tensor]:
+    """Load labels from a labels.txt file."""
+
     if not labels_file_path.exists():
         raise FileNotFoundError(f"Labels file not found: {labels_file_path}")
 
@@ -107,6 +135,8 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
         labels: dict[str, Tensor],
         max_samples: int | None = None,
     ) -> None:
+        """Validate feature files and associate them with labels."""
+
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
         if not split_directory.is_dir():
@@ -119,7 +149,7 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
             )
         if max_samples is not None:
             if max_samples <= 0:
-                raise ValueError("--max_samples must be a positive integer")
+                raise ValueError("--maximum-samples must be a positive integer")
             files = files[:max_samples]
 
         missing_labels = [path.name for path in files if path.name not in labels]
@@ -139,10 +169,19 @@ class SVWindowDataset(Dataset[tuple[Tensor, Tensor]]):
                     f"{sample_path} has shape {array.shape}, expected {EXPECTED_INPUT_SHAPE}"
                 )
 
-    def __len__(self) -> int:
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of labeled feature windows."""
+
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Load one feature window and a copy of its labels."""
+
         sample_path = self.samples[index]
         features = np.load(sample_path).astype(np.float32, copy=False)
         labels = self.labels[sample_path.name]
@@ -163,7 +202,11 @@ class EpochMetrics:
 
 
 class MetricsAccumulator:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+    ) -> None:
+        """Initialize loss and prediction counters."""
+
         self.loss_sum = 0.0
         self.sample_count = 0
         self.elementwise_true_positives = 0
@@ -176,7 +219,14 @@ class MetricsAccumulator:
         self.any_sv_false_positives = 0
         self.any_sv_false_negatives = 0
 
-    def update(self, loss: float, logits: Tensor, labels: Tensor) -> None:
+    def update(
+        self,
+        loss: float,
+        logits: Tensor,
+        labels: Tensor,
+    ) -> None:
+        """Accumulate batch loss and prediction counts."""
+
         batch_size = labels.shape[0]
         self.loss_sum += loss * batch_size
         self.sample_count += batch_size
@@ -210,7 +260,11 @@ class MetricsAccumulator:
             ((any_predictions == 0) & (any_targets == 1)).sum().item()
         )
 
-    def compute(self) -> EpochMetrics:
+    def compute(
+        self,
+    ) -> EpochMetrics:
+        """Compute aggregate epoch metrics."""
+
         elementwise_precision = safe_divide(
             self.elementwise_true_positives,
             self.elementwise_true_positives + self.elementwise_false_positives,
@@ -255,9 +309,11 @@ def create_dataloader(
     split_directory: Path,
     batch_size: int,
     shuffle: bool,
-    num_workers: int,
+    worker_count: int,
     max_samples: int | None = None,
 ) -> DataLoader[tuple[Tensor, Tensor]]:
+    """Create a labeled feature-window dataloader."""
+
     resolved_labels_file_path = resolve_labels_file_path(
         split_directory=split_directory,
     )
@@ -271,12 +327,20 @@ def create_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=num_workers,
+        num_workers=worker_count,
         pin_memory=torch.cuda.is_available(),
     )
 
 
-def resolve_labels_file_path(split_directory: Path) -> Path:
+def resolve_labels_file_path(
+    split_directory: Path,
+    labels_file_path: Path | None = None,
+) -> Path:
+    """Resolve labels.txt from a split directory or its parent."""
+
+    if labels_file_path is not None:
+        return labels_file_path
+
     candidate_paths = [
         split_directory / "labels.txt",
         split_directory.parent / "labels.txt",
@@ -297,6 +361,8 @@ def run_epoch(
     device: torch.device,
     optimizer: AdamW | None = None,
 ) -> EpochMetrics:
+    """Run one training or evaluation epoch."""
+
     training = optimizer is not None
     model.train(training)
     accumulator = MetricsAccumulator()
@@ -325,24 +391,35 @@ def save_checkpoint(
     optimizer: AdamW,
     epoch: int,
     metrics: EpochMetrics,
-    args: argparse.Namespace,
+    arguments: argparse.Namespace,
 ) -> None:
+    """Save a model checkpoint."""
+
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "metrics": asdict(metrics),
-        "args": serialize_arguments(args),
+        "args": serialize_arguments(arguments),
     }
     torch.save(checkpoint, path)
 
 
-def write_json(output_file_path: Path, payload: Any) -> None:
+def write_json(
+    output_file_path: Path,
+    payload: Any,
+) -> None:
+    """Write a JSON payload to disk."""
+
     with output_file_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
 
 
-def initialize_wandb(arguments: argparse.Namespace) -> wandb.sdk.wandb_run.Run | None:
+def initialize_wandb(
+    arguments: argparse.Namespace,
+) -> wandb.sdk.wandb_run.Run | None:
+    """Initialize a Weights & Biases run unless disabled."""
+
     if arguments.wandb_mode == "disabled":
         return None
 
@@ -366,31 +443,110 @@ def initialize_wandb(arguments: argparse.Namespace) -> wandb.sdk.wandb_run.Run |
     return run
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train the adapted SVHunter model.")
+def parse_arguments() -> argparse.Namespace:
+    """Parse command-line arguments."""
 
-    # fmt: off
-    parser.add_argument("--train_directory", dest="train_directory", type=Path, required=True, help="Directory of training .npy files.")
-    parser.add_argument("--validation_directory", dest="validation_directory", type=Path, required=True, help="Directory of validation .npy files.")
-    parser.add_argument("--test_directory", dest="test_directory", type=Path, required=True, help="Directory of test .npy files.")
-    parser.add_argument("--output_directory", dest="output_directory", type=Path, required=True, help="Directory for checkpoints and metrics.")
-    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size.")
-    parser.add_argument("--learning_rate", type=float, default=2e-4, help="AdamW learning rate.")
-    parser.add_argument("--weight_decay", type=float, default=1e-3, help="AdamW weight decay.")
-    parser.add_argument("--num_workers", type=int, default=0, help="DataLoader worker processes.")
-    parser.add_argument("--max_samples", type=int, default=None, help="Optional cap on the number of samples loaded from each split for development and testing.")
+    parser = argparse.ArgumentParser(description="Train the adapted SVHunter model.")
+    parser.add_argument(
+        "--train-directory",
+        dest="train_directory",
+        type=Path,
+        required=True,
+        help="Directory of training .npy files.",
+    )
+    parser.add_argument(
+        "--validation-directory",
+        dest="validation_directory",
+        type=Path,
+        required=True,
+        help="Directory of validation .npy files.",
+    )
+    parser.add_argument(
+        "--test-directory",
+        dest="test_directory",
+        type=Path,
+        required=True,
+        help="Directory of test .npy files.",
+    )
+    parser.add_argument(
+        "--output-directory",
+        dest="output_directory",
+        type=Path,
+        required=True,
+        help="Directory for checkpoints and metrics.",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=20, help="Number of training epochs."
+    )
+    parser.add_argument(
+        "--batch-size", dest="batch_size", type=int, default=64, help="Batch size."
+    )
+    parser.add_argument(
+        "--learning-rate",
+        dest="learning_rate",
+        type=float,
+        default=2e-4,
+        help="AdamW learning rate.",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        dest="weight_decay",
+        type=float,
+        default=1e-3,
+        help="AdamW weight decay.",
+    )
+    parser.add_argument(
+        "--worker-count",
+        dest="worker_count",
+        type=int,
+        default=0,
+        help="DataLoader worker processes.",
+    )
+    parser.add_argument(
+        "--maximum-samples",
+        dest="maximum_samples",
+        type=int,
+        default=None,
+        help="Optional cap on the number of samples loaded from each split.",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Training device, for example cpu, mps, or cuda.")
-    parser.add_argument("--wandb_mode", type=str, choices=("online", "offline", "disabled"), default="online", help="Weights & Biases logging mode.")
-    parser.add_argument("--wandb_project", type=str, default="structural-variant-detection", help="Weights & Biases project name.")
-    parser.add_argument("--wandb_run_name", type=str, default=None, help="Optional Weights & Biases run name.")
-    # fmt: on
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=get_default_device_name(),
+        help="Training device, for example cpu, mps, or cuda.",
+    )
+    parser.add_argument(
+        "--wandb-mode",
+        dest="wandb_mode",
+        type=str,
+        choices=("online", "offline", "disabled"),
+        default="online",
+        help="Weights & Biases logging mode.",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        dest="wandb_project",
+        type=str,
+        default="structural-variant-detection",
+        help="Weights & Biases project name.",
+    )
+    parser.add_argument(
+        "--wandb-run-name",
+        dest="wandb_run_name",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases run name.",
+    )
 
     return parser.parse_args()
 
 
-def train(arguments: argparse.Namespace) -> dict[str, Any]:
+def train(
+    arguments: argparse.Namespace,
+) -> dict[str, Any]:
+    """Train the model and return run summary metrics."""
+
     set_seed(arguments.seed)
     arguments.output_directory.mkdir(parents=True, exist_ok=True)
     wandb_run = initialize_wandb(arguments)
@@ -400,22 +556,22 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
             split_directory=arguments.train_directory,
             batch_size=arguments.batch_size,
             shuffle=True,
-            num_workers=arguments.num_workers,
-            max_samples=arguments.max_samples,
+            worker_count=arguments.worker_count,
+            max_samples=arguments.maximum_samples,
         )
         validation_loader = create_dataloader(
             split_directory=arguments.validation_directory,
             batch_size=arguments.batch_size,
             shuffle=False,
-            num_workers=arguments.num_workers,
-            max_samples=arguments.max_samples,
+            worker_count=arguments.worker_count,
+            max_samples=arguments.maximum_samples,
         )
         test_loader = create_dataloader(
             split_directory=arguments.test_directory,
             batch_size=arguments.batch_size,
             shuffle=False,
-            num_workers=arguments.num_workers,
-            max_samples=arguments.max_samples,
+            worker_count=arguments.worker_count,
+            max_samples=arguments.maximum_samples,
         )
 
         device = torch.device(arguments.device)
@@ -470,7 +626,7 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
                     optimizer=optimizer,
                     epoch=epoch,
                     metrics=validation_metrics,
-                    args=arguments,
+                    arguments=arguments,
                 )
 
             if wandb_run is not None:
@@ -496,7 +652,7 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
             optimizer=optimizer,
             epoch=arguments.epochs,
             metrics=final_validation_metrics,
-            args=arguments,
+            arguments=arguments,
         )
 
         best_checkpoint = torch.load(
@@ -546,7 +702,9 @@ def train(arguments: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> None:
-    arguments = parse_args()
+    """Run the training command-line interface."""
+
+    arguments = parse_arguments()
     train(arguments)
 
 

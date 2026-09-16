@@ -59,8 +59,12 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Root directory containing per-cluster pair_classification.tsv files.",
     )
-    parser.add_argument("--input-vcf", type=Path, required=True, help="Original input VCF.")
-    parser.add_argument("--output-vcf", type=Path, required=True, help="Filtered output VCF.")
+    parser.add_argument(
+        "--input-vcf", type=Path, required=True, help="Original input VCF."
+    )
+    parser.add_argument(
+        "--output-vcf", type=Path, required=True, help="Filtered output VCF."
+    )
     parser.add_argument(
         "--decision-tsv",
         type=Path,
@@ -118,7 +122,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_tsv(path: Path) -> List[Dict[str, str]]:
+def read_tsv(
+    path: Path,
+) -> List[Dict[str, str]]:
     """Read a tab-delimited file with a required header."""
 
     if not path.is_file():
@@ -130,7 +136,10 @@ def read_tsv(path: Path) -> List[Dict[str, str]]:
         return list(reader)
 
 
-def require_columns(path: Path, columns: Sequence[str]) -> None:
+def require_columns(
+    path: Path,
+    columns: Sequence[str],
+) -> None:
     """Require TSV columns, including for header-only files."""
 
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -140,7 +149,9 @@ def require_columns(path: Path, columns: Sequence[str]) -> None:
         raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
 
 
-def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
+def parse_contig_metadata(
+    contig_name: str,
+) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
     """Parse ordered SV IDs and haplotype states from a constructed contig name."""
 
     fields: Dict[str, str] = {}
@@ -159,13 +170,17 @@ def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int,
         try:
             sv_id, _ = entry.rsplit(":", 1)
         except ValueError as exc:
-            raise ValueError(f"Invalid SV metadata entry {entry!r}: {contig_name}") from exc
+            raise ValueError(
+                f"Invalid SV metadata entry {entry!r}: {contig_name}"
+            ) from exc
         sv_ids.append(sv_id)
 
     try:
         states = tuple(int(value) for value in fields["GT"].split(":"))
     except ValueError as exc:
-        raise ValueError(f"Invalid GT state vector in contig name: {contig_name}") from exc
+        raise ValueError(
+            f"Invalid GT state vector in contig name: {contig_name}"
+        ) from exc
 
     if len(sv_ids) != len(states):
         raise ValueError(
@@ -173,12 +188,16 @@ def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int,
             f"{len(sv_ids)} SVs versus {len(states)} states"
         )
     if any(state not in (0, 1) for state in states):
-        raise ValueError(f"Only biallelic haplotype states 0/1 are supported: {contig_name}")
+        raise ValueError(
+            f"Only biallelic haplotype states 0/1 are supported: {contig_name}"
+        )
 
     return tuple(sv_ids), states
 
 
-def load_haplotypes(cluster_dir: Path) -> Dict[str, Haplotype]:
+def load_haplotypes(
+    cluster_dir: Path,
+) -> Dict[str, Haplotype]:
     """Load haplotypes for a cluster."""
 
     path = cluster_dir / "haplotypes.tsv"
@@ -200,13 +219,17 @@ def load_haplotypes(cluster_dir: Path) -> Dict[str, Haplotype]:
         if expected_sv_ids is None:
             expected_sv_ids = sv_ids
         elif sv_ids != expected_sv_ids:
-            raise ValueError(f"{cluster_dir.name}: haplotypes do not share ordered SV IDs")
+            raise ValueError(
+                f"{cluster_dir.name}: haplotypes do not share ordered SV IDs"
+            )
 
         haplotypes[row["hap_id"]] = Haplotype(row["hap_id"], states, sv_ids)
     return haplotypes
 
 
-def parse_score_field(text: str) -> Dict[str, float]:
+def parse_score_field(
+    text: str,
+) -> Dict[str, float]:
     """Parse a semicolon-separated SV score field."""
 
     scores: Dict[str, float] = {}
@@ -223,7 +246,9 @@ def parse_score_field(text: str) -> Dict[str, float]:
     return scores
 
 
-def genotype_text_to_map(text: str) -> Dict[str, str]:
+def genotype_text_to_map(
+    text: str,
+) -> Dict[str, str]:
     """Parse a semicolon-separated SV genotype field."""
 
     genotypes: Dict[str, str] = {}
@@ -271,7 +296,9 @@ def update_allele_state(
     return state
 
 
-def parse_pair_ids(pair_id: str) -> Tuple[str, str]:
+def parse_pair_ids(
+    pair_id: str,
+) -> Tuple[str, str]:
     """Parse pair_id into two haplotype IDs."""
 
     parts = pair_id.split("__")
@@ -305,12 +332,16 @@ def build_cluster_decisions(
     hap1_id, hap2_id = parse_pair_ids(pair_id)
     haplotypes = load_haplotypes(cluster_dir)
     if hap1_id not in haplotypes or hap2_id not in haplotypes:
-        raise ValueError(f"{cluster_dir.name}: pair {pair_id} references unknown haplotypes")
+        raise ValueError(
+            f"{cluster_dir.name}: pair {pair_id} references unknown haplotypes"
+        )
 
     hap1 = haplotypes[hap1_id]
     hap2 = haplotypes[hap2_id]
     if hap1.sv_ids != hap2.sv_ids:
-        raise ValueError(f"{cluster_dir.name}: pair {pair_id} haplotypes have different SV IDs")
+        raise ValueError(
+            f"{cluster_dir.name}: pair {pair_id} haplotypes have different SV IDs"
+        )
 
     pair_genotypes = genotype_text_to_map(best["genotype"])
     hap1_scores = parse_score_field(best["hap1_sv_scores"])
@@ -318,7 +349,9 @@ def build_cluster_decisions(
     pair_score = float(best["score"])
 
     decisions = []
-    for sv_id, state1, state2 in zip(hap1.sv_ids, hap1.states, hap2.states, strict=True):
+    for sv_id, state1, state2 in zip(
+        hap1.sv_ids, hap1.states, hap2.states, strict=True
+    ):
         if sv_id not in pair_genotypes:
             raise ValueError(f"{classification_path}: genotype field missing {sv_id}")
         if sv_id not in hap1_scores or sv_id not in hap2_scores:
@@ -394,7 +427,10 @@ def collect_decisions(
     return decisions
 
 
-def validate_threshold(name: str, value: float) -> None:
+def validate_threshold(
+    name: str,
+    value: float,
+) -> None:
     """Require a sigmoid probability threshold."""
 
     if not 0 <= value <= 1:
@@ -408,13 +444,19 @@ def validate_output_paths(
 ) -> None:
     """Refuse to overwrite outputs unless requested."""
 
-    existing = [path for path in (output_vcf, decision_tsv) if path is not None and path.exists()]
+    existing = [
+        path
+        for path in (output_vcf, decision_tsv)
+        if path is not None and path.exists()
+    ]
     if existing and not overwrite:
         preview = "\n".join(str(path) for path in existing)
         raise FileExistsError(f"Output already exists; use --overwrite:\n{preview}")
 
 
-def parse_gt_text(genotype: str) -> Tuple[int, int]:
+def parse_gt_text(
+    genotype: str,
+) -> Tuple[int, int]:
     """Convert 0/0-style genotype text to a pysam GT tuple."""
 
     parts = genotype.replace("|", "/").split("/")
@@ -423,7 +465,9 @@ def parse_gt_text(genotype: str) -> Tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def record_gt_text(record: pysam.VariantRecord) -> str:
+def record_gt_text(
+    record: pysam.VariantRecord,
+) -> str:
     """Return the first sample genotype as text, or NA for sample-less VCFs."""
 
     if not record.samples:
@@ -435,7 +479,10 @@ def record_gt_text(record: pysam.VariantRecord) -> str:
     return "/".join("." if allele is None else str(allele) for allele in gt)
 
 
-def set_record_gt(record: pysam.VariantRecord, genotype: str) -> None:
+def set_record_gt(
+    record: pysam.VariantRecord,
+    genotype: str,
+) -> None:
     """Set all sample GT fields to the final genotype."""
 
     if not record.samples:
@@ -445,7 +492,9 @@ def set_record_gt(record: pysam.VariantRecord, genotype: str) -> None:
         record.samples[sample]["GT"] = gt_tuple
 
 
-def vcf_mode_for_output(path: Path) -> str:
+def vcf_mode_for_output(
+    path: Path,
+) -> str:
     """Return a pysam output mode based on the requested suffix."""
 
     if path.suffix == ".gz":
@@ -491,7 +540,9 @@ def export_vcf(
 
     decision_rows: List[Tuple[object, ...]] = []
     with pysam.VariantFile(str(input_vcf)) as in_vcf:
-        with pysam.VariantFile(str(output_vcf), vcf_mode_for_output(output_vcf), header=in_vcf.header) as out_vcf:
+        with pysam.VariantFile(
+            str(output_vcf), vcf_mode_for_output(output_vcf), header=in_vcf.header
+        ) as out_vcf:
             for record in in_vcf:
                 variant_id = record.id
                 original_gt = record_gt_text(record)

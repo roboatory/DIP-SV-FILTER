@@ -24,8 +24,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
-from architecture import SVHunterModel
-
+from models.architecture import SVHunterModel
 
 EXPECTED_INPUT_SHAPE = (2000, 9)
 EXPECTED_SUBWINDOWS = 10
@@ -80,13 +79,27 @@ class ClusterInputs:
 class FeatureDataset(Dataset[Tuple[Tensor, str]]):
     """Load validated targeted feature matrices for inference."""
 
-    def __init__(self, feature_paths: Sequence[Path]) -> None:
+    def __init__(
+        self,
+        feature_paths: Sequence[Path],
+    ) -> None:
+        """Initialize and validate the dataset or accumulator."""
+
         self.feature_paths = tuple(feature_paths)
 
-    def __len__(self) -> int:
+    def __len__(
+        self,
+    ) -> int:
+        """Return the number of feature windows."""
+
         return len(self.feature_paths)
 
-    def __getitem__(self, index: int) -> Tuple[Tensor, str]:
+    def __getitem__(
+        self,
+        index: int,
+    ) -> Tuple[Tensor, str]:
+        """Load a feature window and its associated metadata."""
+
         path = self.feature_paths[index]
         array = np.load(path).astype(np.float32, copy=False)
         return torch.from_numpy(array), str(path)
@@ -112,14 +125,18 @@ def parse_args() -> argparse.Namespace:
             "pair_classification.tsv files for downstream VCF export."
         )
     )
-    parser.add_argument("--model", type=Path, required=True, help="PyTorch model checkpoint.")
+    parser.add_argument(
+        "--model", type=Path, required=True, help="PyTorch model checkpoint."
+    )
     parser.add_argument(
         "--cluster-dir",
         type=Path,
         required=True,
         help="Root directory containing all k-mer prefilter cluster directories.",
     )
-    parser.add_argument("--batch-size", type=int, default=64, help="Inference batch size. Default: 64.")
+    parser.add_argument(
+        "--batch-size", type=int, default=64, help="Inference batch size. Default: 64."
+    )
     parser.add_argument(
         "--num-workers",
         type=int,
@@ -153,7 +170,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_tsv(path: Path) -> List[Dict[str, str]]:
+def read_tsv(
+    path: Path,
+) -> List[Dict[str, str]]:
     """Read a TSV file and validate that it has a header."""
 
     if not path.is_file():
@@ -165,7 +184,10 @@ def read_tsv(path: Path) -> List[Dict[str, str]]:
         return list(reader)
 
 
-def require_columns(path: Path, columns: Sequence[str]) -> None:
+def require_columns(
+    path: Path,
+    columns: Sequence[str],
+) -> None:
     """Require TSV columns, including for header-only files."""
 
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -175,13 +197,17 @@ def require_columns(path: Path, columns: Sequence[str]) -> None:
         raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
 
 
-def parse_bool(value: str) -> bool:
+def parse_bool(
+    value: str,
+) -> bool:
     """Parse boolean text from existing TSV output."""
 
     return value.lower() in {"1", "true", "t", "yes", "y"}
 
 
-def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
+def parse_contig_metadata(
+    contig_name: str,
+) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
     """Parse ordered SV IDs and haplotype states from a contig name."""
 
     fields: Dict[str, str] = {}
@@ -200,13 +226,17 @@ def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int,
         try:
             sv_id, _ = entry.rsplit(":", 1)
         except ValueError as exc:
-            raise ValueError(f"Invalid SV metadata entry {entry!r}: {contig_name}") from exc
+            raise ValueError(
+                f"Invalid SV metadata entry {entry!r}: {contig_name}"
+            ) from exc
         sv_ids.append(sv_id)
 
     try:
         states = tuple(int(value) for value in fields["GT"].split(":"))
     except ValueError as exc:
-        raise ValueError(f"Invalid GT state vector in contig name: {contig_name}") from exc
+        raise ValueError(
+            f"Invalid GT state vector in contig name: {contig_name}"
+        ) from exc
 
     if len(sv_ids) != len(states):
         raise ValueError(
@@ -214,12 +244,16 @@ def parse_contig_metadata(contig_name: str) -> Tuple[Tuple[str, ...], Tuple[int,
             f"{len(sv_ids)} SVs versus {len(states)} states"
         )
     if any(state not in (0, 1) for state in states):
-        raise ValueError(f"Only biallelic haplotype states 0/1 are supported: {contig_name}")
+        raise ValueError(
+            f"Only biallelic haplotype states 0/1 are supported: {contig_name}"
+        )
 
     return tuple(sv_ids), states
 
 
-def load_haplotypes(cluster_dir: Path) -> Dict[str, Haplotype]:
+def load_haplotypes(
+    cluster_dir: Path,
+) -> Dict[str, Haplotype]:
     """Load and cross-check haplotype state vectors."""
 
     path = cluster_dir / "haplotypes.tsv"
@@ -241,7 +275,9 @@ def load_haplotypes(cluster_dir: Path) -> Dict[str, Haplotype]:
         if expected_sv_ids is None:
             expected_sv_ids = sv_ids
         elif sv_ids != expected_sv_ids:
-            raise ValueError(f"{cluster_dir.name}: haplotypes do not share the same ordered SV IDs")
+            raise ValueError(
+                f"{cluster_dir.name}: haplotypes do not share the same ordered SV IDs"
+            )
 
         haplotypes[row["hap_id"]] = Haplotype(
             states=states,
@@ -251,7 +287,9 @@ def load_haplotypes(cluster_dir: Path) -> Dict[str, Haplotype]:
     return haplotypes
 
 
-def load_retained_pairs(cluster_dir: Path) -> List[Pair]:
+def load_retained_pairs(
+    cluster_dir: Path,
+) -> List[Pair]:
     """Load retained pairs and their original prefilter ranks."""
 
     path = cluster_dir / "prefilter_pairs.tsv"
@@ -273,7 +311,10 @@ def load_retained_pairs(cluster_dir: Path) -> List[Pair]:
     return sorted(pairs, key=lambda pair: pair.prefilter_rank)
 
 
-def expected_pair_dir(feature_root: Path, pair: Pair) -> Path:
+def expected_pair_dir(
+    feature_root: Path,
+    pair: Pair,
+) -> Path:
     """Return the directory name used by pair-aware targeted encoding."""
 
     return feature_root / f"{pair.prefilter_rank:02d}_{pair.hap1_id}__{pair.hap2_id}"
@@ -299,7 +340,14 @@ def validate_pair_inputs(
     focus_rows = read_tsv(focus_path)
     require_columns(
         windows_path,
-        ("feature_path", "pair_rank", "pair_id", "hap_id", "window_start", "window_end"),
+        (
+            "feature_path",
+            "pair_rank",
+            "pair_id",
+            "hap_id",
+            "window_start",
+            "window_end",
+        ),
     )
     require_columns(
         focus_path,
@@ -315,14 +363,23 @@ def validate_pair_inputs(
         ),
     )
     if not window_rows:
-        raise ValueError(f"{cluster_dir.name} pair {pair.pair_id}: windows.tsv is empty")
+        raise ValueError(
+            f"{cluster_dir.name} pair {pair.pair_id}: windows.tsv is empty"
+        )
     if not focus_rows:
-        raise ValueError(f"{cluster_dir.name} pair {pair.pair_id}: focus_subwindows.tsv is empty")
+        raise ValueError(
+            f"{cluster_dir.name} pair {pair.pair_id}: focus_subwindows.tsv is empty"
+        )
 
     feature_paths: Dict[str, Path] = {}
     for row in window_rows:
-        if int(row["pair_rank"]) != pair.prefilter_rank or row["pair_id"] != pair.pair_id:
-            raise ValueError(f"{windows_path}: pair metadata does not match {pair.pair_id}")
+        if (
+            int(row["pair_rank"]) != pair.prefilter_rank
+            or row["pair_id"] != pair.pair_id
+        ):
+            raise ValueError(
+                f"{windows_path}: pair metadata does not match {pair.pair_id}"
+            )
         relative_path = row["feature_path"]
         if relative_path in feature_paths:
             raise ValueError(f"{windows_path}: duplicate feature_path {relative_path}")
@@ -337,8 +394,13 @@ def validate_pair_inputs(
         feature_paths[relative_path] = feature_path.resolve()
 
     for row in focus_rows:
-        if int(row["pair_rank"]) != pair.prefilter_rank or row["pair_id"] != pair.pair_id:
-            raise ValueError(f"{focus_path}: pair metadata does not match {pair.pair_id}")
+        if (
+            int(row["pair_rank"]) != pair.prefilter_rank
+            or row["pair_id"] != pair.pair_id
+        ):
+            raise ValueError(
+                f"{focus_path}: pair metadata does not match {pair.pair_id}"
+            )
         if row["feature_path"] not in feature_paths:
             raise ValueError(
                 f"{focus_path}: feature_path {row['feature_path']} is absent from windows.tsv"
@@ -417,14 +479,19 @@ def discover_cluster_inputs(
     return clusters, tuple(sorted(all_feature_paths))
 
 
-def load_model(checkpoint_path: Path, device: torch.device) -> nn.Module:
+def load_model(
+    checkpoint_path: Path,
+    device: torch.device,
+) -> nn.Module:
     """Strictly load the checkpoint into the local architecture."""
 
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
-        raise ValueError(f"Checkpoint does not contain model_state_dict: {checkpoint_path}")
+        raise ValueError(
+            f"Checkpoint does not contain model_state_dict: {checkpoint_path}"
+        )
 
     model = SVHunterModel().to(device)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
@@ -453,7 +520,9 @@ def run_inference(
     predictions: Dict[str, np.ndarray] = {}
     with torch.no_grad():
         for features, path_strings in dataloader:
-            features = features.to(device=device, dtype=torch.float32, non_blocking=True)
+            features = features.to(
+                device=device, dtype=torch.float32, non_blocking=True
+            )
             logits = model(features)
             if logits.ndim != 2 or logits.shape[1] != EXPECTED_SUBWINDOWS:
                 raise ValueError(
@@ -494,7 +563,10 @@ def pair_genotypes(
     return tuple(genotypes)
 
 
-def top_fraction_mean(values: Sequence[float], fraction: float) -> float:
+def top_fraction_mean(
+    values: Sequence[float],
+    fraction: float,
+) -> float:
     """Average the highest ceil(n * fraction) values."""
 
     if not values:
@@ -538,8 +610,7 @@ def score_pair(
         repeated_scores[key].append(float(predictions[feature_path][subwindow_index]))
 
     unique_subwindow_scores = {
-        key: float(np.mean(values))
-        for key, values in repeated_scores.items()
+        key: float(np.mean(values)) for key, values in repeated_scores.items()
     }
 
     sv_hap_values: Dict[Tuple[str, str], List[float]] = defaultdict(list)
@@ -616,7 +687,9 @@ def format_sv_scores(
     for sv_id in haplotypes[hap_id].sv_ids:
         key = (hap_id, sv_id)
         if key not in result.sv_hap_scores:
-            raise ValueError(f"Pair {result.pair.pair_id}: missing score for {hap_id}/{sv_id}")
+            raise ValueError(
+                f"Pair {result.pair.pair_id}: missing score for {hap_id}/{sv_id}"
+            )
         scores.append(f"{sv_id}={result.sv_hap_scores[key]:.6f}")
     return ";".join(scores)
 
@@ -646,8 +719,7 @@ def validate_output_paths(
     """Refuse to overwrite any requested output unless explicitly allowed."""
 
     output_paths = [
-        cluster.cluster_dir / "pair_classification.tsv"
-        for cluster in clusters
+        cluster.cluster_dir / "pair_classification.tsv" for cluster in clusters
     ]
     existing = [path for path in output_paths if path.exists()]
     if existing and not overwrite:
@@ -682,7 +754,6 @@ def write_results(
         )
 
 
-
 def main() -> None:
     """Entry point."""
 
@@ -692,12 +763,12 @@ def main() -> None:
     if args.num_workers < 0:
         raise ValueError("--num-workers cannot be negative")
     if not 0 < args.top_subwindow_fraction <= 1:
-        raise ValueError("--top-subwindow-fraction must be greater than 0 and at most 1")
+        raise ValueError(
+            "--top-subwindow-fraction must be greater than 0 and at most 1"
+        )
 
     cluster_root = args.cluster_dir.resolve()
-    clusters, feature_paths = discover_cluster_inputs(
-        cluster_root, args.feature_subdir
-    )
+    clusters, feature_paths = discover_cluster_inputs(cluster_root, args.feature_subdir)
     validate_output_paths(clusters, args.overwrite)
 
     device = torch.device(args.device)
