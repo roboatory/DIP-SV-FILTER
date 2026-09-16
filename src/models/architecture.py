@@ -161,13 +161,13 @@ class SVHunterModel(nn.Module):
         feature_count: int = 9,
         subwindow_size: int = 200,
         subwindow_count: int = 10,
-        embedding_dimension: int = 128,
+        embedding_dimension: int = 100,
         attention_head_count: int = 4,
         key_dimension: int = 32,
-        transformer_block_count: int = 4,
-        multilayer_perceptron_hidden_dimension: int = 384,
-        attention_dropout: float = 0.1,
-        head_dropout: float = 0.2,
+        transformer_block_count: int = 3,
+        multilayer_perceptron_hidden_dimension: int = 128,
+        attention_dropout: float = 0.3,
+        head_dropout: float = 0.4,
     ) -> None:
         """Initialize the CNN-Transformer classifier."""
 
@@ -179,10 +179,7 @@ class SVHunterModel(nn.Module):
         self.feature_count = feature_count
         self.subwindow_size = subwindow_size
         self.subwindow_count = subwindow_count
-        self.input_norm = nn.LayerNorm(feature_count)
-        self.input_pos_embedding = nn.Parameter(torch.zeros(1, input_length, 1))
-        nn.init.normal_(self.input_pos_embedding, std=0.02)
-        self.encoder = SVHunterSubwindowEncoder(feature_count=feature_count + 1)
+        self.encoder = SVHunterSubwindowEncoder(feature_count=feature_count)
         self.patch_projection = nn.Linear(
             self.encoder.output_dimension, embedding_dimension
         )
@@ -234,27 +231,19 @@ class SVHunterModel(nn.Module):
             )
 
         batch_size = inputs.shape[0]
-        normalized_inputs = self.input_norm(inputs)
-        positioned_inputs = torch.cat(
-            [
-                normalized_inputs,
-                self.input_pos_embedding.expand(batch_size, -1, -1),
-            ],
-            dim=-1,
-        )
-        positioned_inputs = positioned_inputs.view(
+        subwindow_inputs = inputs.view(
             batch_size,
             self.subwindow_count,
             self.subwindow_size,
-            self.feature_count + 1,
+            self.feature_count,
         )
-        positioned_inputs = positioned_inputs.unsqueeze(2).reshape(
+        subwindow_inputs = subwindow_inputs.unsqueeze(2).reshape(
             batch_size * self.subwindow_count,
             1,
             self.subwindow_size,
-            self.feature_count + 1,
+            self.feature_count,
         )
-        subwindow_embeddings = self.encoder(positioned_inputs)
+        subwindow_embeddings = self.encoder(subwindow_inputs)
         subwindow_embeddings = subwindow_embeddings.view(
             batch_size,
             self.subwindow_count,

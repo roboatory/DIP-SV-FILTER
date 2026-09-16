@@ -3,6 +3,8 @@ from collections import defaultdict
 import numpy as np
 import pysam
 
+from utils import parse_variant_records
+
 if __package__:
     from .extract_features import encode_region
 else:
@@ -30,16 +32,14 @@ def get_chromosome_lengths(
 
 def extract_structural_variant_regions(
     variant_file_path: str,
-) -> defaultdict[str, list[tuple[int, int]]]:
+) -> defaultdict[str, list[tuple[int, int, str | None]]]:
     """Extract structural variant regions from a VCF."""
 
     structural_variant_regions = defaultdict(list)
-    variant_file = pysam.VariantFile(variant_file_path)
-    for record in variant_file.fetch():
-        chromosome = record.chrom
-        start = record.start
-        end = record.stop if record.stop else record.start + 1
-        structural_variant_regions[chromosome].append((start, end))
+    for record in parse_variant_records(variant_file_path):
+        structural_variant_regions[record["chrom"]].append(
+            (record["start"], record["end"], record["sv_type"])
+        )
 
     for chromosome in structural_variant_regions.keys():
         structural_variant_regions[chromosome] = sorted(
@@ -51,9 +51,9 @@ def extract_structural_variant_regions(
 
 
 def cluster_structural_variants(
-    structural_variant_regions: dict[str, list[tuple[int, int]]],
+    structural_variant_regions: dict[str, list[tuple[int, int, str | None]]],
     chromosome_lengths: dict[str, int],
-    distance_threshold: int = 1999,
+    distance_threshold: int = 2000,
 ) -> defaultdict[str, list[list[object]]]:
     """Cluster nearby structural variant regions by chromosome."""
 
@@ -65,13 +65,14 @@ def cluster_structural_variants(
 
         chromosome_length = chromosome_lengths[chromosome]
 
-        current_start, current_end = regions[0]
+        current_start, current_end = regions[0][:2]
         variants_in_cluster = [regions[0]]
 
-        for start, end in regions[1:]:
-            if start - current_end <= distance_threshold:
+        for variant in regions[1:]:
+            start, end = variant[:2]
+            if start - current_end < distance_threshold:
                 current_end = max(current_end, end)
-                variants_in_cluster.append((start, end))
+                variants_in_cluster.append(variant)
             else:
                 clustered_regions[chromosome].append(
                     [
@@ -83,7 +84,7 @@ def cluster_structural_variants(
                     ]
                 )
                 current_start, current_end = start, end
-                variants_in_cluster = [(start, end)]
+                variants_in_cluster = [variant]
 
         clustered_regions[chromosome].append(
             [
@@ -102,7 +103,7 @@ def sample_non_structural_variant_windows(
     clustered_structural_variant_regions: dict[str, list[list[object]]],
     chromosome_lengths: dict[str, int],
     window_size: int = 2000,
-    samples_per_chromosome: int = 500,
+    samples_per_chromosome: int = 50,
 ) -> defaultdict[str, list[list[object]]]:
     """Sample windows away from clustered structural variants."""
 
@@ -231,9 +232,10 @@ def check_bam_region(
 def label_patches(
     chromosome: str,
     region: tuple[int, int],
-    structural_variants: list[tuple[int, int]],
+    structural_variants: list[tuple[int, int, str | None]],
     bam: pysam.AlignmentFile,
     patch_size: int = 200,
+    minimum_overlap: int = 50,
 ) -> np.ndarray:
     """Label 200 bp patches that overlap or show evidence of structural variants."""
 
@@ -247,8 +249,14 @@ def label_patches(
         patch_start = region[0] + patch_index * patch_size
         patch_end = patch_start + patch_size
 
-        for variant_start, variant_end in structural_variants:
-            if patch_end > variant_start and patch_start < variant_end:
+        for variant_start, variant_end, variant_type in structural_variants:
+            if variant_type == "INS":
+                if patch_start <= variant_start < patch_end:
+                    labels[patch_index] = 1
+                    break
+                continue
+            overlap = min(patch_end, variant_end) - max(patch_start, variant_start)
+            if overlap >= minimum_overlap:
                 labels[patch_index] = 1
                 break
         else:
@@ -256,6 +264,43 @@ def label_patches(
                 labels[patch_index] = 1
 
     return labels
+
+
+def build_structural_variant_window_starts(
+    region: tuple[int, int],
+    structural_variants: list[tuple[int, int, str | None]],
+    width: int = 2000,
+    stride: int = 500,
+    structural_variant_threshold: int = 50,
+    start_jitter: int = 50,
+) -> list[int]:
+    """Choose jittered windows covering the clustered structural variants."""
+    cluster_start = min(variant[0] for variant in structural_variants)
+    cluster_end = max(variant[1] for variant in structural_variants)
+    minimum_region_start = region[0]
+    maximum_region_start = region[1] - width
+    minimum_start = max(
+        minimum_region_start, cluster_start - width + structural_variant_threshold
+    )
+    maximum_start = min(
+        maximum_region_start, cluster_end - structural_variant_threshold
+    )
+    if maximum_start < minimum_start:
+        return [int(np.clip(minimum_start, minimum_region_start, maximum_region_start))]
+    window_starts = list(range(minimum_start, maximum_start + 1, stride))
+    if window_starts[-1] != maximum_start:
+        window_starts.append(maximum_start)
+    jittered_starts = []
+    for window_start in window_starts:
+        jitter = np.random.randint(-start_jitter, start_jitter + 1)
+        jittered_starts.append(
+            int(
+                np.clip(
+                    window_start + jitter, minimum_region_start, maximum_region_start
+                )
+            )
+        )
+    return jittered_starts
 
 
 def generate_labeled_windows(
@@ -266,6 +311,8 @@ def generate_labeled_windows(
     width: int = 2000,
     stride: int = 500,
     non_structural_variant: bool = False,
+    structural_variant_threshold: int = 50,
+    start_jitter: int = 50,
 ) -> list[tuple[str, np.ndarray]]:
     """Generate encoded feature windows and labels for one target region."""
 
@@ -274,18 +321,20 @@ def generate_labeled_windows(
     feature_file_and_labels = list()
 
     region, structural_variants = target_region
-    if (region[1] - region[0]) % width == 0:
-        window_starts = list(range(region[0], region[1] - width + 1, stride))
-        window_ends = list(range(region[0] + width, region[1] + 1, stride))
+    if structural_variants:
+        window_starts = build_structural_variant_window_starts(
+            region,
+            structural_variants,
+            width,
+            stride,
+            structural_variant_threshold,
+            start_jitter,
+        )
     else:
-        window_starts = list(range(region[0], region[1] - width + 1, stride)) + [
-            region[1] - width
-        ]
-        window_ends = list(range(region[0] + width, region[1] + 1, stride)) + [
-            region[1]
-        ]
+        window_starts = [region[0]]
 
-    for window_start, window_end in zip(window_starts, window_ends):
+    for window_start in window_starts:
+        window_end = window_start + width
         labels = label_patches(
             chromosome,
             (window_start, window_end),

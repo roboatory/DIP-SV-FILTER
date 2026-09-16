@@ -1,5 +1,6 @@
 import argparse
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -170,19 +171,18 @@ def update_feature_matrix(
         position = end
 
 
-def build_feature_matrix(
-    bam: pysam.AlignmentFile,
-    contig: str,
+def _build_feature_matrix_from_records(
+    records: Iterable[pysam.AlignedSegment],
     region_start: int,
     region_end: int,
     dtype: np.dtype = np.float32,
 ) -> np.ndarray:
-    """Build an unnormalized MAMNET-style feature matrix for one BAM region."""
+    """Build an unnormalized MAMNET-style feature matrix for aligned records overlapping a region."""
 
     region_length = region_end - region_start
     feature_matrix = np.zeros((region_length, 9), dtype=dtype)
 
-    for segment in bam.fetch(contig, region_start, region_end):
+    for segment in records:
         if segment.is_unmapped:
             continue
 
@@ -210,6 +210,20 @@ def build_feature_matrix(
     return feature_matrix
 
 
+def build_feature_matrix(
+    bam: pysam.AlignmentFile,
+    contig: str,
+    region_start: int,
+    region_end: int,
+    dtype: np.dtype = np.float32,
+) -> np.ndarray:
+    """Build an unnormalized MAMNET-style feature matrix for one BAM region."""
+
+    return _build_feature_matrix_from_records(
+        bam.fetch(contig, region_start, region_end), region_start, region_end, dtype
+    )
+
+
 def encode_region(
     bam: pysam.AlignmentFile,
     contig: str,
@@ -227,6 +241,30 @@ def encode_region(
         dtype=np.float32,
     )
     return logify_numpy(feature_matrix).astype(output_dtype)
+
+
+def encode_records(
+    records: Iterable[pysam.AlignedSegment],
+    region_start: int,
+    region_end: int,
+    contig: str | None = None,
+) -> np.ndarray:
+    """Encode a region using only the alignment records assigned to a haplotype."""
+
+    overlapping_records = (
+        segment
+        for segment in records
+        if not segment.is_unmapped
+        and (contig is None or segment.reference_name == contig)
+        and segment.reference_start is not None
+        and segment.reference_end is not None
+        and segment.reference_end > region_start
+        and segment.reference_start < region_end
+    )
+    feature_matrix = _build_feature_matrix_from_records(
+        overlapping_records, region_start, region_end
+    )
+    return logify_numpy(feature_matrix).astype(np.float32)
 
 
 def write_feature_heatmap(

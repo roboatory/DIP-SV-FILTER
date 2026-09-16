@@ -5,26 +5,15 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
-if __package__:
-    from .architecture import SVHunterModel
-else:
-    from architecture import SVHunterModel
-
-
-EXPECTED_INPUT_SHAPE = (2000, 9)
-
-
-def get_default_device_name() -> str:
-    """Return the best available torch device name."""
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+from models.common import (
+    EXPECTED_INPUT_SHAPE,
+    format_binary_prediction_vector,
+    get_default_device_name,
+    load_model_from_checkpoint,
+)
 
 
 class SVInferenceDataset(Dataset[tuple[Tensor, str]]):
@@ -94,31 +83,6 @@ def format_prediction_vector(
     """Format probability predictions as a comma-separated vector."""
 
     return ",".join(f"{value:.{decimal_places}f}" for value in values.tolist())
-
-
-def format_binary_prediction_vector(
-    values: Tensor,
-) -> str:
-    """Format binary predictions as a comma-separated vector."""
-
-    return ",".join(str(int(value)) for value in values.tolist())
-
-
-def load_model_from_checkpoint(
-    checkpoint_file_path: Path,
-    device: torch.device,
-) -> nn.Module:
-    """Load an SVHunter model from a checkpoint file."""
-
-    checkpoint = torch.load(
-        checkpoint_file_path,
-        map_location=device,
-        weights_only=False,
-    )
-    model = SVHunterModel().to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-    return model
 
 
 def write_inference_file(
