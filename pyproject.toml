@@ -28,15 +28,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = [
-    "utils",
-    "filter_contig_pairs",
-    "realign_with_secondary",
-    "align_cluster_reads_to_haps",
-    "encode_pair_target_windows",
-    "classify_contig_pairs",
-    "export_filtered_vcf",
-]
+py-modules = ["utils", "filter_contig_pairs", "realign_with_secondary"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

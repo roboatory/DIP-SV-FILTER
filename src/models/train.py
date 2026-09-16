@@ -334,12 +334,8 @@ def create_dataloader(
 
 def resolve_labels_file_path(
     split_directory: Path,
-    labels_file_path: Path | None = None,
 ) -> Path:
     """Resolve labels.txt from a split directory or its parent."""
-
-    if labels_file_path is not None:
-        return labels_file_path
 
     candidate_paths = [
         split_directory / "labels.txt",

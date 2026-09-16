@@ -167,9 +167,7 @@ def parse_pysam_variant_record(
             info,
         ),
         "start": variant_record.start,
-        "end": variant_record.stop
-        if variant_record.stop is not None
-        else variant_record.start + max(1, len(variant_record.ref)),
+        "end": variant_record.start + len(variant_record.ref),
         "alleles": variant_record.alleles,
         "gt": genotype,
     }
