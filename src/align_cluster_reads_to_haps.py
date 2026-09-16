@@ -21,9 +21,9 @@ import argparse
 import concurrent.futures
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ def normalize_preset(
 
 def discover_cluster_dirs(
     root: Path,
-) -> List[Path]:
+) -> list[Path]:
     """Find cluster directories with the expected k-mer prefilter outputs."""
 
     if not root.is_dir():
@@ -138,10 +138,10 @@ def discover_cluster_dirs(
 def discover_tasks(
     cluster_root: Path,
     output_subdir: str,
-) -> List[AlignmentTask]:
+) -> list[AlignmentTask]:
     """Create one alignment task per cluster/haplotype FASTA."""
 
-    tasks: List[AlignmentTask] = []
+    tasks: list[AlignmentTask] = []
     for cluster_dir in discover_cluster_dirs(cluster_root):
         reads_fasta = cluster_dir / "cluster_reads.fasta"
         hap_fasta_dir = cluster_dir / "hap_fastas"
@@ -176,7 +176,7 @@ def bam_is_complete(
 
 
 def run_command(
-    command: List[str],
+    command: list[str],
 ) -> None:
     """Run a command and raise a clear error if it fails."""
 
@@ -184,8 +184,8 @@ def run_command(
 
 
 def run_alignment_pipe(
-    minimap2_command: List[str],
-    sort_command: List[str],
+    minimap2_command: list[str],
+    sort_command: list[str],
 ) -> None:
     """Pipe minimap2 SAM output directly into samtools sort."""
 
@@ -265,7 +265,7 @@ def run_tasks(
     jobs: int,
     minimap2_threads: int,
     overwrite: bool,
-) -> List[AlignmentResult]:
+) -> list[AlignmentResult]:
     """Run all alignment tasks with bounded process-level concurrency."""
 
     task_list = list(tasks)
@@ -275,7 +275,7 @@ def run_tasks(
             for task in task_list
         ]
 
-    results: List[AlignmentResult] = []
+    results: list[AlignmentResult] = []
     with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as executor:
         future_to_task = {
             executor.submit(

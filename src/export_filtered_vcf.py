@@ -13,20 +13,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Optional
 
 import pysam
 
-
-@dataclass(frozen=True)
-class Haplotype:
-    """One haplotype state vector from haplotypes.tsv."""
-
-    hap_id: str
-    states: Tuple[int, ...]
-    sv_ids: Tuple[str, ...]
+from utils import load_haplotypes, read_tsv, require_columns
 
 
 @dataclass(frozen=True)
@@ -122,117 +116,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_tsv(
-    path: Path,
-) -> List[Dict[str, str]]:
-    """Read a tab-delimited file with a required header."""
-
-    if not path.is_file():
-        raise FileNotFoundError(f"Required TSV file not found: {path}")
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if reader.fieldnames is None:
-            raise ValueError(f"TSV file has no header: {path}")
-        return list(reader)
-
-
-def require_columns(
-    path: Path,
-    columns: Sequence[str],
-) -> None:
-    """Require TSV columns, including for header-only files."""
-
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        fieldnames = csv.DictReader(handle, delimiter="\t").fieldnames or []
-    missing = [column for column in columns if column not in fieldnames]
-    if missing:
-        raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
-
-
-def parse_contig_metadata(
-    contig_name: str,
-) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
-    """Parse ordered SV IDs and haplotype states from a constructed contig name."""
-
-    fields: Dict[str, str] = {}
-    for item in contig_name.split("|"):
-        if "=" in item:
-            key, value = item.split("=", 1)
-            fields[key] = value
-
-    if "SVs" not in fields or "GT" not in fields:
-        raise ValueError(f"Contig name must contain SVs= and GT= fields: {contig_name}")
-
-    sv_ids = []
-    for entry in fields["SVs"].split(";"):
-        if not entry:
-            continue
-        try:
-            sv_id, _ = entry.rsplit(":", 1)
-        except ValueError as exc:
-            raise ValueError(
-                f"Invalid SV metadata entry {entry!r}: {contig_name}"
-            ) from exc
-        sv_ids.append(sv_id)
-
-    try:
-        states = tuple(int(value) for value in fields["GT"].split(":"))
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid GT state vector in contig name: {contig_name}"
-        ) from exc
-
-    if len(sv_ids) != len(states):
-        raise ValueError(
-            f"SV and GT vector lengths differ in contig name: "
-            f"{len(sv_ids)} SVs versus {len(states)} states"
-        )
-    if any(state not in (0, 1) for state in states):
-        raise ValueError(
-            f"Only biallelic haplotype states 0/1 are supported: {contig_name}"
-        )
-
-    return tuple(sv_ids), states
-
-
-def load_haplotypes(
-    cluster_dir: Path,
-) -> Dict[str, Haplotype]:
-    """Load haplotypes for a cluster."""
-
-    path = cluster_dir / "haplotypes.tsv"
-    rows = read_tsv(path)
-    require_columns(path, ("hap_id", "gt", "name"))
-    if not rows:
-        raise ValueError(f"No haplotypes found in {path}")
-
-    haplotypes: Dict[str, Haplotype] = {}
-    expected_sv_ids: Optional[Tuple[str, ...]] = None
-    for row in rows:
-        sv_ids, states = parse_contig_metadata(row["name"])
-        tsv_states = tuple(int(value) for value in row["gt"].split(":"))
-        if tsv_states != states:
-            raise ValueError(
-                f"{cluster_dir.name}: haplotype {row['hap_id']} GT differs between "
-                "haplotypes.tsv and contig metadata"
-            )
-        if expected_sv_ids is None:
-            expected_sv_ids = sv_ids
-        elif sv_ids != expected_sv_ids:
-            raise ValueError(
-                f"{cluster_dir.name}: haplotypes do not share ordered SV IDs"
-            )
-
-        haplotypes[row["hap_id"]] = Haplotype(row["hap_id"], states, sv_ids)
-    return haplotypes
-
-
 def parse_score_field(
     text: str,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Parse a semicolon-separated SV score field."""
 
-    scores: Dict[str, float] = {}
+    scores: dict[str, float] = {}
     if not text:
         return scores
     for item in text.split(";"):
@@ -248,10 +137,10 @@ def parse_score_field(
 
 def genotype_text_to_map(
     text: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Parse a semicolon-separated SV genotype field."""
 
-    genotypes: Dict[str, str] = {}
+    genotypes: dict[str, str] = {}
     if not text:
         return genotypes
     for item in text.split(";"):
@@ -271,7 +160,7 @@ def score_thresholds_for_sv(
     max_present_del: float,
     min_absent_ins: float,
     min_absent_del: float,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Return present-gate and absent-rescue thresholds for one SV."""
 
     if ".INS." in sv_id:
@@ -298,7 +187,7 @@ def update_allele_state(
 
 def parse_pair_ids(
     pair_id: str,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Parse pair_id into two haplotype IDs."""
 
     parts = pair_id.split("__")
@@ -313,7 +202,7 @@ def build_cluster_decisions(
     max_present_del: float,
     min_absent_ins: float,
     min_absent_del: float,
-) -> List[VariantDecision]:
+) -> list[VariantDecision]:
     """Build final genotype decisions for one cluster's best pair."""
 
     classification_path = cluster_dir / "pair_classification.tsv"
@@ -401,13 +290,13 @@ def collect_decisions(
     max_present_del: float,
     min_absent_ins: float,
     min_absent_del: float,
-) -> Dict[str, VariantDecision]:
+) -> dict[str, VariantDecision]:
     """Collect final decisions from every cluster and stop on conflicts."""
 
     if not cluster_root.is_dir():
         raise NotADirectoryError(f"Cluster directory not found: {cluster_root}")
 
-    decisions: Dict[str, VariantDecision] = {}
+    decisions: dict[str, VariantDecision] = {}
     for cluster_dir in sorted(path for path in cluster_root.iterdir() if path.is_dir()):
         for decision in build_cluster_decisions(
             cluster_dir,
@@ -456,7 +345,7 @@ def validate_output_paths(
 
 def parse_gt_text(
     genotype: str,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Convert 0/0-style genotype text to a pysam GT tuple."""
 
     parts = genotype.replace("|", "/").split("/")
@@ -535,10 +424,10 @@ def export_vcf(
     output_vcf: Path,
     decisions: Mapping[str, VariantDecision],
     keep_absent_genotypes: bool,
-) -> List[Tuple[object, ...]]:
+) -> list[tuple[object, ...]]:
     """Write the filtered VCF and return optional audit rows."""
 
-    decision_rows: List[Tuple[object, ...]] = []
+    decision_rows: list[tuple[object, ...]] = []
     with pysam.VariantFile(str(input_vcf)) as in_vcf:
         with pysam.VariantFile(
             str(output_vcf), vcf_mode_for_output(output_vcf), header=in_vcf.header

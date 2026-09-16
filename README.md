@@ -205,6 +205,7 @@ src/
     parse_sample_specific_strings.py # sample-specific string analysis
   models/
     architecture.py                 # CNN-Transformer model definition
+    common.py                       # shared model loading, labels, and device selection
     train.py                        # training loop, metrics, checkpointing
     inference.py                    # batch inference from checkpoint
     export_false_samples.py         # labeled prediction diagnostics

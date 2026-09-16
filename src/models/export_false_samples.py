@@ -1,6 +1,3 @@
-# For False sample analysis
-
-
 from __future__ import annotations
 
 import argparse
@@ -11,16 +8,14 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
-try:
-    from .inference import get_default_device_name, load_model_from_checkpoint
-    from .train import (
-        EXPECTED_INPUT_SHAPE,
-        load_labels,
-        resolve_labels_file_path,
-    )
-except ImportError:
-    from inference import get_default_device_name, load_model_from_checkpoint
-    from train import EXPECTED_INPUT_SHAPE, load_labels, resolve_labels_file_path
+from models.common import (
+    EXPECTED_INPUT_SHAPE,
+    format_binary_prediction_vector,
+    get_default_device_name,
+    load_labels,
+    load_model_from_checkpoint,
+    resolve_labels_file_path,
+)
 
 
 class SVFalseSampleDataset(Dataset[tuple[Tensor, Tensor, str]]):
@@ -29,7 +24,7 @@ class SVFalseSampleDataset(Dataset[tuple[Tensor, Tensor, str]]):
         split_directory: Path,
         labels_file_path: Path,
     ) -> None:
-        """Initialize and validate the dataset or accumulator."""
+        """Discover labeled feature windows for prediction diagnostics."""
 
         if not split_directory.exists():
             raise FileNotFoundError(f"Split directory not found: {split_directory}")
@@ -96,27 +91,6 @@ def create_false_sample_dataloader(
     )
 
 
-def format_binary_vector(
-    values: Tensor,
-) -> str:
-    """Format a binary tensor as comma-separated values."""
-
-    return ",".join(str(int(value)) for value in values.tolist())
-
-
-def resolve_split_labels_file_path(
-    split_name: str,
-    split_directory: Path,
-    labels_file_path: Path | None,
-) -> Path:
-    """Resolve the labels file used for this split."""
-
-    return resolve_labels_file_path(
-        split_directory=split_directory,
-        labels_file_path=labels_file_path,
-    )
-
-
 def export_false_samples_for_split(
     model: torch.nn.Module,
     device: torch.device,
@@ -130,8 +104,7 @@ def export_false_samples_for_split(
 ) -> Path:
     """Write predictions and labels for misclassified windows."""
 
-    resolved_labels_file_path = resolve_split_labels_file_path(
-        split_name=split_name,
+    resolved_labels_file_path = resolve_labels_file_path(
         split_directory=split_directory,
         labels_file_path=labels_file_path,
     )
@@ -179,8 +152,8 @@ def export_false_samples_for_split(
                     false_sample_count += 1
                     handle.write(
                         f"{file_names[index]}\t"
-                        f"{format_binary_vector(predictions_cpu[index])}\t"
-                        f"{format_binary_vector(targets_cpu[index])}\n"
+                        f"{format_binary_prediction_vector(predictions_cpu[index])}\t"
+                        f"{format_binary_prediction_vector(targets_cpu[index])}\n"
                     )
 
     print(
@@ -198,48 +171,56 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--checkpoint-file-path",
         "--checkpoint_file_path",
         type=Path,
         required=True,
         help="Path to the trained model checkpoint.",
     )
     parser.add_argument(
+        "--train-directory",
         "--train_directory",
         type=Path,
         required=True,
         help="Directory of training .npy files.",
     )
     parser.add_argument(
+        "--validation-directory",
         "--validation_directory",
         type=Path,
         required=True,
         help="Directory of validation .npy files.",
     )
     parser.add_argument(
+        "--test-directory",
         "--test_directory",
         type=Path,
         required=True,
         help="Directory of test .npy files.",
     )
     parser.add_argument(
+        "--labels-file-path",
         "--labels_file_path",
         type=Path,
         default=None,
         help="Optional shared labels file path. If omitted, the script resolves labels per split.",
     )
     parser.add_argument(
+        "--output-directory",
         "--output_directory",
         type=Path,
         required=True,
         help="Directory to write TSV outputs.",
     )
     parser.add_argument(
+        "--batch-size",
         "--batch_size",
         type=int,
         default=64,
         help="Inference batch size.",
     )
     parser.add_argument(
+        "--num-workers",
         "--num_workers",
         type=int,
         default=0,
@@ -252,6 +233,7 @@ def parse_args() -> argparse.Namespace:
         help="Inference device, for example cpu, mps, or cuda.",
     )
     parser.add_argument(
+        "--prediction-threshold",
         "--prediction_threshold",
         type=float,
         default=0.5,

@@ -1,5 +1,7 @@
+import csv
 import gzip
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 from typing import Any, TextIO
@@ -187,3 +189,126 @@ def parse_variant_records(
     else:
         for variant_record in variant_source:
             yield parse_pysam_variant_record(variant_record)
+
+
+def read_tsv(
+    path: Path,
+    require_header: bool = True,
+) -> list[dict[str, str]]:
+    """Read a TSV file and validate that it has a header."""
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Required TSV file not found: {path}")
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if require_header and reader.fieldnames is None:
+            raise ValueError(f"TSV file has no header: {path}")
+        return list(reader)
+
+
+def require_columns(
+    path: Path,
+    columns: Sequence[str],
+) -> None:
+    """Require TSV columns, including for header-only files."""
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        fieldnames = csv.DictReader(handle, delimiter="\t").fieldnames or []
+    missing = [column for column in columns if column not in fieldnames]
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
+
+
+def parse_bool(
+    value: str,
+) -> bool:
+    """Parse boolean text from existing TSV output."""
+
+    return value.lower() in {"1", "true", "t", "yes", "y"}
+
+
+def parse_contig_metadata(
+    contig_name: str,
+) -> tuple[tuple[str, ...], tuple[int, ...]]:
+    """Parse ordered SV IDs and haplotype states from a contig name."""
+
+    fields: dict[str, str] = {}
+    for item in contig_name.split("|"):
+        if "=" in item:
+            key, value = item.split("=", 1)
+            fields[key] = value
+
+    if "SVs" not in fields or "GT" not in fields:
+        raise ValueError(f"Contig name must contain SVs= and GT= fields: {contig_name}")
+
+    sv_ids = []
+    for entry in fields["SVs"].split(";"):
+        if not entry:
+            continue
+        try:
+            sv_id, _ = entry.rsplit(":", 1)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid SV metadata entry {entry!r}: {contig_name}"
+            ) from exc
+        sv_ids.append(sv_id)
+
+    try:
+        states = tuple(int(value) for value in fields["GT"].split(":"))
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid GT state vector in contig name: {contig_name}"
+        ) from exc
+
+    if len(sv_ids) != len(states):
+        raise ValueError(
+            f"SV and GT vector lengths differ in contig name: "
+            f"{len(sv_ids)} SVs versus {len(states)} states"
+        )
+    if any(state not in (0, 1) for state in states):
+        raise ValueError(
+            f"Only biallelic haplotype states 0/1 are supported: {contig_name}"
+        )
+
+    return tuple(sv_ids), states
+
+
+@dataclass(frozen=True)
+class Haplotype:
+    """One haplotype state vector from haplotypes.tsv."""
+
+    hap_id: str
+    states: tuple[int, ...]
+    sv_ids: tuple[str, ...]
+
+
+def load_haplotypes(
+    cluster_dir: Path,
+) -> dict[str, Haplotype]:
+    """Load haplotypes for a cluster."""
+
+    path = cluster_dir / "haplotypes.tsv"
+    rows = read_tsv(path)
+    require_columns(path, ("hap_id", "gt", "name"))
+    if not rows:
+        raise ValueError(f"No haplotypes found in {path}")
+
+    haplotypes: dict[str, Haplotype] = {}
+    expected_sv_ids: tuple[str, ...] | None = None
+    for row in rows:
+        sv_ids, states = parse_contig_metadata(row["name"])
+        tsv_states = tuple(int(value) for value in row["gt"].split(":"))
+        if tsv_states != states:
+            raise ValueError(
+                f"{cluster_dir.name}: haplotype {row['hap_id']} GT differs between "
+                "haplotypes.tsv and contig metadata"
+            )
+        if expected_sv_ids is None:
+            expected_sv_ids = sv_ids
+        elif sv_ids != expected_sv_ids:
+            raise ValueError(
+                f"{cluster_dir.name}: haplotypes do not share ordered SV IDs"
+            )
+
+        haplotypes[row["hap_id"]] = Haplotype(row["hap_id"], states, sv_ids)
+    return haplotypes

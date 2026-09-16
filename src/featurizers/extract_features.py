@@ -171,19 +171,18 @@ def update_feature_matrix(
         position = end
 
 
-def build_feature_matrix(
-    bam: pysam.AlignmentFile,
-    contig: str,
+def _build_feature_matrix_from_records(
+    records: Iterable[pysam.AlignedSegment],
     region_start: int,
     region_end: int,
     dtype: np.dtype = np.float32,
 ) -> np.ndarray:
-    """Build an unnormalized MAMNET-style feature matrix for one BAM region."""
+    """Build an unnormalized MAMNET-style feature matrix for aligned records overlapping a region."""
 
     region_length = region_end - region_start
     feature_matrix = np.zeros((region_length, 9), dtype=dtype)
 
-    for segment in bam.fetch(contig, region_start, region_end):
+    for segment in records:
         if segment.is_unmapped:
             continue
 
@@ -209,6 +208,20 @@ def build_feature_matrix(
         )
 
     return feature_matrix
+
+
+def build_feature_matrix(
+    bam: pysam.AlignmentFile,
+    contig: str,
+    region_start: int,
+    region_end: int,
+    dtype: np.dtype = np.float32,
+) -> np.ndarray:
+    """Build an unnormalized MAMNET-style feature matrix for one BAM region."""
+
+    return _build_feature_matrix_from_records(
+        bam.fetch(contig, region_start, region_end), region_start, region_end, dtype
+    )
 
 
 def encode_region(
@@ -238,46 +251,20 @@ def encode_records(
 ) -> np.ndarray:
     """Encode a region using only the alignment records assigned to a haplotype."""
 
-    region_length = region_end - region_start
-    feature_matrix = np.zeros((region_length, 9), dtype=np.float32)
-
-    for segment in records:
-        if segment.is_unmapped:
-            continue
-        if contig is not None and segment.reference_name != contig:
-            continue
-        if segment.reference_start is None or segment.reference_end is None:
-            continue
-        if (
-            segment.reference_end <= region_start
-            or segment.reference_start >= region_end
-        ):
-            continue
-
-        trimmed_cigar = trim_cigar(segment, region_start, region_end)
-        trimmed_md = trim_mdtag(segment, region_start, region_end)
-
-        related_start = max(0, segment.reference_start - region_start)
-        related_end = min(region_length, segment.reference_end - region_start)
-
-        update_feature_matrix(
-            feature_matrix, trimmed_cigar, trimmed_md, related_start, related_end
-        )
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        insertion_counts = feature_matrix[:, 3]
-        deletion_counts = feature_matrix[:, 1]
-
-        feature_matrix[:, 4] = np.where(
-            insertion_counts > 0, feature_matrix[:, 4] / insertion_counts, 0
-        )
-        feature_matrix[:, 6] = np.where(
-            deletion_counts > 0, feature_matrix[:, 6] / deletion_counts, 0
-        )
-
-    normalized_features = logify_numpy(feature_matrix).astype("float32")
-
-    return normalized_features
+    overlapping_records = (
+        segment
+        for segment in records
+        if not segment.is_unmapped
+        and (contig is None or segment.reference_name == contig)
+        and segment.reference_start is not None
+        and segment.reference_end is not None
+        and segment.reference_end > region_start
+        and segment.reference_start < region_end
+    )
+    feature_matrix = _build_feature_matrix_from_records(
+        overlapping_records, region_start, region_end
+    )
+    return logify_numpy(feature_matrix).astype(np.float32)
 
 
 def write_feature_heatmap(

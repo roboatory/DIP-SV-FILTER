@@ -17,14 +17,16 @@ import concurrent.futures
 import csv
 import shutil
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Optional
 
 import numpy as np
 import pysam
 
 from featurizers.extract_features import encode_records
+from utils import parse_bool, read_tsv
 
 
 @dataclass(frozen=True)
@@ -45,7 +47,7 @@ class HaplotypeInfo:
     contig_name: str
     length: int
     bam_path: Path
-    sv_intervals: Tuple[SVInterval, ...]
+    sv_intervals: tuple[SVInterval, ...]
 
 
 @dataclass(frozen=True)
@@ -62,15 +64,15 @@ class PairInfo:
 class HapAlignmentData:
     """Alignment records and assignment scores for one haplotype BAM."""
 
-    records_by_read: Dict[str, List[pysam.AlignedSegment]]
-    scores_by_read: Dict[str, int]
+    records_by_read: dict[str, list[pysam.AlignedSegment]]
+    scores_by_read: dict[str, int]
 
 
 @dataclass
 class AssignedPairRecords:
     """Read assignment results for one pair."""
 
-    records_by_hap: Dict[str, List[pysam.AlignedSegment]]
+    records_by_hap: dict[str, list[pysam.AlignedSegment]]
     reads_assigned_hap1: Optional[int]
     reads_assigned_hap2: Optional[int]
     hap1_better: int
@@ -87,8 +89,8 @@ class TargetWindow:
 
     start: int
     end: int
-    focus_mask: Tuple[int, ...]
-    sv_to_subwindows: Mapping[str, Tuple[int, ...]]
+    focus_mask: tuple[int, ...]
+    sv_to_subwindows: Mapping[str, tuple[int, ...]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -174,15 +176,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_tsv(
-    path: Path,
-) -> List[Dict[str, str]]:
-    """Read a tab-delimited file into dictionaries."""
-
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        return list(csv.DictReader(handle, delimiter="\t"))
-
-
 def write_tsv(
     path: Path,
     rows: Sequence[Mapping[str, object]],
@@ -199,17 +192,9 @@ def write_tsv(
             writer.writerow({field: row.get(field, "") for field in fields})
 
 
-def parse_bool(
-    value: str,
-) -> bool:
-    """Parse TSV boolean text."""
-
-    return value.lower() in {"1", "true", "t", "yes", "y"}
-
-
 def parse_sv_intervals(
     contig_name: str,
-) -> Tuple[SVInterval, ...]:
+) -> tuple[SVInterval, ...]:
     """Parse ``SVs=sv_id:start-end;...`` intervals from a contig name."""
 
     fields = {}
@@ -223,7 +208,7 @@ def parse_sv_intervals(
     if not sv_text:
         raise ValueError(f"Contig name does not contain SVs= metadata: {contig_name}")
 
-    intervals: List[SVInterval] = []
+    intervals: list[SVInterval] = []
     for entry in sv_text.split(";"):
         if not entry:
             continue
@@ -249,11 +234,11 @@ def parse_sv_intervals(
 def load_haplotypes(
     cluster_dir: Path,
     hap_bam_subdir: str,
-) -> Dict[str, HaplotypeInfo]:
+) -> dict[str, HaplotypeInfo]:
     """Load retained haplotype metadata for one cluster."""
 
-    rows = read_tsv(cluster_dir / "retained_haplotypes.tsv")
-    haplotypes: Dict[str, HaplotypeInfo] = {}
+    rows = read_tsv(cluster_dir / "retained_haplotypes.tsv", require_header=False)
+    haplotypes: dict[str, HaplotypeInfo] = {}
     for row in rows:
         hap_id = row["hap_id"]
         bam_path = cluster_dir / hap_bam_subdir / f"{hap_id}.bam"
@@ -271,11 +256,11 @@ def load_haplotypes(
 
 def load_retained_pairs(
     cluster_dir: Path,
-) -> List[PairInfo]:
+) -> list[PairInfo]:
     """Load retained pairs from ``prefilter_pairs.tsv``."""
 
     pairs = []
-    for row in read_tsv(cluster_dir / "prefilter_pairs.tsv"):
+    for row in read_tsv(cluster_dir / "prefilter_pairs.tsv", require_header=False):
         if not parse_bool(row["retained"]):
             continue
         pairs.append(
@@ -292,7 +277,7 @@ def load_retained_pairs(
 
 def load_cluster_read_names(
     cluster_dir: Path,
-) -> Tuple[str, ...]:
+) -> tuple[str, ...]:
     """Load read names from ``cluster_reads.fasta`` for assignment QC."""
 
     read_names = []
@@ -347,7 +332,7 @@ def load_hap_alignment_data(
     if not bai_path.is_file():
         raise FileNotFoundError(f"Missing haplotype BAM index: {bai_path}")
 
-    records_by_read: Dict[str, List[pysam.AlignedSegment]] = defaultdict(list)
+    records_by_read: dict[str, list[pysam.AlignedSegment]] = defaultdict(list)
     with pysam.AlignmentFile(str(haplotype.bam_path), "rb") as bam:
         for record in bam.fetch(until_eof=True):
             if record.is_unmapped or record.is_secondary:
@@ -479,14 +464,14 @@ def clamp_window_start(
 def group_sv_intervals(
     intervals: Sequence[SVInterval],
     merge_distance: int,
-) -> List[List[SVInterval]]:
+) -> list[list[SVInterval]]:
     """Merge nearby SV intervals into target groups."""
 
     sorted_intervals = sorted(
         intervals, key=lambda interval: (interval.start, interval.end, interval.sv_id)
     )
-    groups: List[List[SVInterval]] = []
-    current: List[SVInterval] = []
+    groups: list[list[SVInterval]] = []
+    current: list[SVInterval] = []
     current_end: Optional[int] = None
 
     for interval in sorted_intervals:
@@ -514,7 +499,7 @@ def candidate_window_starts(
     contig_length: int,
     window_size: int,
     stride: int,
-) -> List[int]:
+) -> list[int]:
     """Generate fixed-length window starts for one SV group."""
 
     if contig_length < window_size:
@@ -553,7 +538,7 @@ def build_target_windows(
     subwindow_size: int,
     merge_distance: int,
     long_group_stride: int,
-) -> List[TargetWindow]:
+) -> list[TargetWindow]:
     """Create target windows and focus annotations for a haplotype."""
 
     if window_size % subwindow_size != 0:
@@ -572,7 +557,7 @@ def build_target_windows(
     for start in sorted(starts):
         end = start + window_size
         focus_mask = [0] * subwindow_count
-        sv_to_subwindows: Dict[str, List[int]] = defaultdict(list)
+        sv_to_subwindows: dict[str, list[int]] = defaultdict(list)
         for interval in intervals:
             focused_indices = []
             for index in range(subwindow_count):
@@ -637,7 +622,7 @@ def assigned_depth_scales(
     pair: PairInfo,
     assigned: AssignedPairRecords,
     normalize: bool,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Return per-haplotype depth scaling factors for one assigned pair."""
 
     if not normalize or pair.hap1_id == pair.hap2_id:
@@ -668,14 +653,14 @@ def encode_pair_windows(
     merge_distance: int,
     long_group_stride: int,
     normalize_assigned_depth: bool,
-) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Encode all target windows for one pair."""
 
     feature_dir = pair_dir / "features"
     feature_dir.mkdir(parents=True, exist_ok=True)
 
-    window_rows: List[Dict[str, object]] = []
-    focus_rows: List[Dict[str, object]] = []
+    window_rows: list[dict[str, object]] = []
+    focus_rows: list[dict[str, object]] = []
     hap_ids = (
         [pair.hap1_id] if pair.hap1_id == pair.hap2_id else [pair.hap1_id, pair.hap2_id]
     )
@@ -748,7 +733,7 @@ def encode_pair_windows(
 def process_cluster(
     cluster_dir: Path,
     args: argparse.Namespace,
-) -> Dict[str, object]:
+) -> dict[str, object]:
     """Process one cluster directory."""
 
     haplotypes = load_haplotypes(cluster_dir, args.hap_bam_subdir)
@@ -895,7 +880,7 @@ def process_cluster(
 def discover_cluster_dirs(
     root: Path,
     selected_clusters: Optional[Sequence[str]],
-) -> List[Path]:
+) -> list[Path]:
     """Find cluster directories with required input files."""
 
     selected = set(selected_clusters) if selected_clusters else None
@@ -924,7 +909,7 @@ def discover_cluster_dirs(
 def run_clusters(
     cluster_dirs: Sequence[Path],
     args: argparse.Namespace,
-) -> List[Dict[str, object]]:
+) -> list[dict[str, object]]:
     """Run cluster processing serially or in parallel."""
 
     if args.threads == 1:

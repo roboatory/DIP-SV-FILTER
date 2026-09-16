@@ -15,27 +15,23 @@ import argparse
 import csv
 import math
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import numpy as np
 import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 
-from models.architecture import SVHunterModel
+from models.common import (
+    EXPECTED_INPUT_SHAPE,
+    get_default_device_name,
+    load_model_from_checkpoint,
+)
+from utils import Haplotype, load_haplotypes, parse_bool, read_tsv, require_columns
 
-EXPECTED_INPUT_SHAPE = (2000, 9)
 EXPECTED_SUBWINDOWS = 10
-
-
-@dataclass(frozen=True)
-class Haplotype:
-    """Haplotype state vector and ordered SV identifiers."""
-
-    states: Tuple[int, ...]
-    sv_ids: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -54,7 +50,7 @@ class PairInputs:
 
     cluster_name: str
     pair: Pair
-    focus_rows: Tuple[Mapping[str, str], ...]
+    focus_rows: tuple[Mapping[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -64,7 +60,7 @@ class PairResult:
     pair: Pair
     score: float
     genotype_text: str
-    sv_hap_scores: Mapping[Tuple[str, str], float]
+    sv_hap_scores: Mapping[tuple[str, str], float]
 
 
 @dataclass(frozen=True)
@@ -73,17 +69,17 @@ class ClusterInputs:
 
     cluster_dir: Path
     haplotypes: Mapping[str, Haplotype]
-    pairs: Tuple[PairInputs, ...]
+    pairs: tuple[PairInputs, ...]
 
 
-class FeatureDataset(Dataset[Tuple[Tensor, str]]):
+class FeatureDataset(Dataset[tuple[Tensor, str]]):
     """Load validated targeted feature matrices for inference."""
 
     def __init__(
         self,
         feature_paths: Sequence[Path],
     ) -> None:
-        """Initialize and validate the dataset or accumulator."""
+        """Store the validated feature paths in inference order."""
 
         self.feature_paths = tuple(feature_paths)
 
@@ -97,22 +93,12 @@ class FeatureDataset(Dataset[Tuple[Tensor, str]]):
     def __getitem__(
         self,
         index: int,
-    ) -> Tuple[Tensor, str]:
+    ) -> tuple[Tensor, str]:
         """Load a feature window and its associated metadata."""
 
         path = self.feature_paths[index]
         array = np.load(path).astype(np.float32, copy=False)
         return torch.from_numpy(array), str(path)
-
-
-def get_default_device_name() -> str:
-    """Choose the best available PyTorch device."""
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def parse_args() -> argparse.Namespace:
@@ -170,126 +156,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_tsv(
-    path: Path,
-) -> List[Dict[str, str]]:
-    """Read a TSV file and validate that it has a header."""
-
-    if not path.is_file():
-        raise FileNotFoundError(f"Required TSV file not found: {path}")
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if reader.fieldnames is None:
-            raise ValueError(f"TSV file has no header: {path}")
-        return list(reader)
-
-
-def require_columns(
-    path: Path,
-    columns: Sequence[str],
-) -> None:
-    """Require TSV columns, including for header-only files."""
-
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        fieldnames = csv.DictReader(handle, delimiter="\t").fieldnames or []
-    missing = [column for column in columns if column not in fieldnames]
-    if missing:
-        raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
-
-
-def parse_bool(
-    value: str,
-) -> bool:
-    """Parse boolean text from existing TSV output."""
-
-    return value.lower() in {"1", "true", "t", "yes", "y"}
-
-
-def parse_contig_metadata(
-    contig_name: str,
-) -> Tuple[Tuple[str, ...], Tuple[int, ...]]:
-    """Parse ordered SV IDs and haplotype states from a contig name."""
-
-    fields: Dict[str, str] = {}
-    for item in contig_name.split("|"):
-        if "=" in item:
-            key, value = item.split("=", 1)
-            fields[key] = value
-
-    if "SVs" not in fields or "GT" not in fields:
-        raise ValueError(f"Contig name must contain SVs= and GT= fields: {contig_name}")
-
-    sv_ids = []
-    for entry in fields["SVs"].split(";"):
-        if not entry:
-            continue
-        try:
-            sv_id, _ = entry.rsplit(":", 1)
-        except ValueError as exc:
-            raise ValueError(
-                f"Invalid SV metadata entry {entry!r}: {contig_name}"
-            ) from exc
-        sv_ids.append(sv_id)
-
-    try:
-        states = tuple(int(value) for value in fields["GT"].split(":"))
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid GT state vector in contig name: {contig_name}"
-        ) from exc
-
-    if len(sv_ids) != len(states):
-        raise ValueError(
-            f"SV and GT vector lengths differ in contig name: "
-            f"{len(sv_ids)} SVs versus {len(states)} states"
-        )
-    if any(state not in (0, 1) for state in states):
-        raise ValueError(
-            f"Only biallelic haplotype states 0/1 are supported: {contig_name}"
-        )
-
-    return tuple(sv_ids), states
-
-
-def load_haplotypes(
-    cluster_dir: Path,
-) -> Dict[str, Haplotype]:
-    """Load and cross-check haplotype state vectors."""
-
-    path = cluster_dir / "haplotypes.tsv"
-    rows = read_tsv(path)
-    require_columns(path, ("hap_id", "gt", "name"))
-    if not rows:
-        raise ValueError(f"No haplotypes found in {path}")
-
-    haplotypes: Dict[str, Haplotype] = {}
-    expected_sv_ids: Tuple[str, ...] | None = None
-    for row in rows:
-        sv_ids, states = parse_contig_metadata(row["name"])
-        tsv_states = tuple(int(value) for value in row["gt"].split(":"))
-        if tsv_states != states:
-            raise ValueError(
-                f"{cluster_dir.name}: haplotype {row['hap_id']} GT differs between "
-                "haplotypes.tsv and contig metadata"
-            )
-        if expected_sv_ids is None:
-            expected_sv_ids = sv_ids
-        elif sv_ids != expected_sv_ids:
-            raise ValueError(
-                f"{cluster_dir.name}: haplotypes do not share the same ordered SV IDs"
-            )
-
-        haplotypes[row["hap_id"]] = Haplotype(
-            states=states,
-            sv_ids=sv_ids,
-        )
-
-    return haplotypes
-
-
 def load_retained_pairs(
     cluster_dir: Path,
-) -> List[Pair]:
+) -> list[Pair]:
     """Load retained pairs and their original prefilter ranks."""
 
     path = cluster_dir / "prefilter_pairs.tsv"
@@ -324,7 +193,7 @@ def validate_pair_inputs(
     cluster_dir: Path,
     pair: Pair,
     feature_root: Path,
-) -> Tuple[PairInputs, Tuple[Path, ...]]:
+) -> tuple[PairInputs, tuple[Path, ...]]:
     """Validate metadata and feature matrices for one retained pair."""
 
     pair_dir = expected_pair_dir(feature_root, pair)
@@ -371,7 +240,7 @@ def validate_pair_inputs(
             f"{cluster_dir.name} pair {pair.pair_id}: focus_subwindows.tsv is empty"
         )
 
-    feature_paths: Dict[str, Path] = {}
+    feature_paths: dict[str, Path] = {}
     for row in window_rows:
         if (
             int(row["pair_rank"]) != pair.prefilter_rank
@@ -432,13 +301,13 @@ def validate_pair_inputs(
 def discover_cluster_inputs(
     cluster_root: Path,
     feature_subdir: str,
-) -> Tuple[List[ClusterInputs], Tuple[Path, ...]]:
+) -> tuple[list[ClusterInputs], tuple[Path, ...]]:
     """Discover and validate every cluster before model inference."""
 
     if not cluster_root.is_dir():
         raise NotADirectoryError(f"Cluster root is not a directory: {cluster_root}")
 
-    clusters: List[ClusterInputs] = []
+    clusters: list[ClusterInputs] = []
     all_feature_paths = set()
     for cluster_dir in sorted(path for path in cluster_root.iterdir() if path.is_dir()):
         if not (cluster_dir / "prefilter_pairs.tsv").is_file():
@@ -479,33 +348,13 @@ def discover_cluster_inputs(
     return clusters, tuple(sorted(all_feature_paths))
 
 
-def load_model(
-    checkpoint_path: Path,
-    device: torch.device,
-) -> nn.Module:
-    """Strictly load the checkpoint into the local architecture."""
-
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
-        raise ValueError(
-            f"Checkpoint does not contain model_state_dict: {checkpoint_path}"
-        )
-
-    model = SVHunterModel().to(device)
-    model.load_state_dict(checkpoint["model_state_dict"], strict=True)
-    model.eval()
-    return model
-
-
 def run_inference(
     model: nn.Module,
     feature_paths: Sequence[Path],
     batch_size: int,
     num_workers: int,
     device: torch.device,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """Run batched inference once across all cluster feature matrices."""
 
     dataset = FeatureDataset(feature_paths)
@@ -517,7 +366,7 @@ def run_inference(
         pin_memory=device.type == "cuda",
     )
 
-    predictions: Dict[str, np.ndarray] = {}
+    predictions: dict[str, np.ndarray] = {}
     with torch.no_grad():
         for features, path_strings in dataloader:
             features = features.to(
@@ -546,7 +395,7 @@ def run_inference(
 def pair_genotypes(
     pair: Pair,
     haplotypes: Mapping[str, Haplotype],
-) -> Tuple[Tuple[str, str], ...]:
+) -> tuple[tuple[str, str], ...]:
     """Convert two haplotype state vectors to unordered diploid genotypes."""
 
     hap1 = haplotypes[pair.hap1_id]
@@ -595,7 +444,7 @@ def score_pair(
     )
     expected_sv_ids = haplotypes[pair.hap1_id].sv_ids
 
-    repeated_scores: Dict[Tuple[str, str, int, int], List[float]] = defaultdict(list)
+    repeated_scores: dict[tuple[str, str, int, int], list[float]] = defaultdict(list)
     for row in pair_inputs.focus_rows:
         feature_path = row["feature_path"]
         if feature_path not in predictions:
@@ -613,7 +462,7 @@ def score_pair(
         key: float(np.mean(values)) for key, values in repeated_scores.items()
     }
 
-    sv_hap_values: Dict[Tuple[str, str], List[float]] = defaultdict(list)
+    sv_hap_values: dict[tuple[str, str], list[float]] = defaultdict(list)
     for (hap_id, sv_id, _start, _end), score in unique_subwindow_scores.items():
         sv_hap_values[(hap_id, sv_id)].append(score)
 
@@ -655,10 +504,10 @@ def classify_clusters(
     clusters: Sequence[ClusterInputs],
     predictions: Mapping[str, np.ndarray],
     top_subwindow_fraction: float,
-) -> Dict[str, List[PairResult]]:
+) -> dict[str, list[PairResult]]:
     """Score and rank all retained pairs within every cluster."""
 
-    results: Dict[str, List[PairResult]] = {}
+    results: dict[str, list[PairResult]] = {}
     for cluster in clusters:
         pair_results = [
             score_pair(
@@ -776,7 +625,7 @@ def main() -> None:
     print(f"Feature matrices: {len(feature_paths)}")
     print(f"Device: {device}")
 
-    model = load_model(args.model.resolve(), device)
+    model = load_model_from_checkpoint(args.model.resolve(), device)
     predictions = run_inference(
         model=model,
         feature_paths=feature_paths,
