@@ -163,54 +163,15 @@ def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(description="Run SVHunter inference.")
-    parser.add_argument(
-        "--checkpoint-file-path",
-        dest="checkpoint_file_path",
-        type=Path,
-        required=True,
-        help="Path to the trained model checkpoint.",
-    )
-    parser.add_argument(
-        "--split-directory",
-        dest="split_directory",
-        type=Path,
-        required=True,
-        help="Directory containing .npy feature windows for inference.",
-    )
-    parser.add_argument(
-        "--output-file-path",
-        dest="output_file_path",
-        type=Path,
-        required=True,
-        help="Path to the output TSV file.",
-    )
-    parser.add_argument(
-        "--batch-size",
-        dest="batch_size",
-        type=int,
-        default=64,
-        help="Inference batch size.",
-    )
-    parser.add_argument(
-        "--worker-count",
-        dest="worker_count",
-        type=int,
-        default=0,
-        help="DataLoader worker processes.",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=get_default_device_name(),
-        help="Inference device, for example cpu, mps, or cuda.",
-    )
-    parser.add_argument(
-        "--prediction-threshold",
-        dest="prediction_threshold",
-        type=float,
-        default=0.5,
-        help="Threshold for converting probabilities into binary predictions.",
-    )
+    # fmt: off
+    parser.add_argument("--checkpoint-file-path", dest="checkpoint_file_path", type=Path, required=True, help="Path to the trained model checkpoint.")
+    parser.add_argument("--split-directory", dest="split_directory", type=Path, required=True, help="Directory containing .npy feature windows for inference.")
+    parser.add_argument("--output-file-path", dest="output_file_path", type=Path, required=True, help="Path to the output TSV file.")
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=64, help="Inference batch size.")
+    parser.add_argument("--worker-count", dest="worker_count", type=int, default=0, help="DataLoader worker processes.")
+    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Inference device, for example cpu, mps, or cuda.")
+    parser.add_argument("--prediction-threshold", dest="prediction_threshold", type=float, default=0.5, help="Threshold for converting probabilities into binary predictions.")
+    # fmt: on
 
     return parser.parse_args()
 

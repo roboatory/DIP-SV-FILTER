@@ -364,109 +364,25 @@ def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(description="Train the adapted SVHunter model.")
-    parser.add_argument(
-        "--train-directory",
-        dest="train_directory",
-        type=Path,
-        required=True,
-        help="Directory of training .npy files.",
-    )
-    parser.add_argument(
-        "--validation-directory",
-        dest="validation_directory",
-        type=Path,
-        required=True,
-        help="Directory of validation .npy files.",
-    )
-    parser.add_argument(
-        "--test-directory",
-        dest="test_directory",
-        type=Path,
-        required=True,
-        help="Directory of test .npy files.",
-    )
-    parser.add_argument(
-        "--output-directory",
-        dest="output_directory",
-        type=Path,
-        required=True,
-        help="Directory for checkpoints and metrics.",
-    )
-    parser.add_argument(
-        "--labels-file-path",
-        type=Path,
-        default=None,
-        help="Optional shared labels.txt; otherwise resolve labels per split.",
-    )
-    parser.add_argument(
-        "--lr-scheduler",
-        choices=("cosine", "constant"),
-        default="cosine",
-        help="Learning-rate schedule. Default: cosine.",
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=20, help="Number of training epochs."
-    )
-    parser.add_argument(
-        "--batch-size", dest="batch_size", type=int, default=64, help="Batch size."
-    )
-    parser.add_argument(
-        "--learning-rate",
-        dest="learning_rate",
-        type=float,
-        default=2e-4,
-        help="AdamW learning rate.",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        dest="weight_decay",
-        type=float,
-        default=1e-3,
-        help="AdamW weight decay.",
-    )
-    parser.add_argument(
-        "--worker-count",
-        dest="worker_count",
-        type=int,
-        default=0,
-        help="DataLoader worker processes.",
-    )
-    parser.add_argument(
-        "--maximum-samples",
-        dest="maximum_samples",
-        type=int,
-        default=None,
-        help="Optional cap on the number of samples loaded from each split.",
-    )
+    # fmt: off
+    parser.add_argument("--train-directory", dest="train_directory", type=Path, required=True, help="Directory of training .npy files.")
+    parser.add_argument("--validation-directory", dest="validation_directory", type=Path, required=True, help="Directory of validation .npy files.")
+    parser.add_argument("--test-directory", dest="test_directory", type=Path, required=True, help="Directory of test .npy files.")
+    parser.add_argument("--output-directory", dest="output_directory", type=Path, required=True, help="Directory for checkpoints and metrics.")
+    parser.add_argument("--labels-file-path", type=Path, default=None, help="Optional shared labels.txt; otherwise resolve labels per split.")
+    parser.add_argument("--lr-scheduler", choices=("cosine", "constant"), default="cosine", help="Learning-rate schedule. Default: cosine.")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs.")
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=64, help="Batch size.")
+    parser.add_argument("--learning-rate", dest="learning_rate", type=float, default=0.0002, help="AdamW learning rate.")
+    parser.add_argument("--weight-decay", dest="weight_decay", type=float, default=0.001, help="AdamW weight decay.")
+    parser.add_argument("--worker-count", dest="worker_count", type=int, default=0, help="DataLoader worker processes.")
+    parser.add_argument("--maximum-samples", dest="maximum_samples", type=int, default=None, help="Optional cap on the number of samples loaded from each split.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=get_default_device_name(),
-        help="Training device, for example cpu, mps, or cuda.",
-    )
-    parser.add_argument(
-        "--wandb-mode",
-        dest="wandb_mode",
-        type=str,
-        choices=("online", "offline", "disabled"),
-        default="online",
-        help="Weights & Biases logging mode.",
-    )
-    parser.add_argument(
-        "--wandb-project",
-        dest="wandb_project",
-        type=str,
-        default="structural-variant-detection",
-        help="Weights & Biases project name.",
-    )
-    parser.add_argument(
-        "--wandb-run-name",
-        dest="wandb_run_name",
-        type=str,
-        default=None,
-        help="Optional Weights & Biases run name.",
-    )
+    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Training device, for example cpu, mps, or cuda.")
+    parser.add_argument("--wandb-mode", dest="wandb_mode", type=str, choices=("online", "offline", "disabled"), default="online", help="Weights & Biases logging mode.")
+    parser.add_argument("--wandb-project", dest="wandb_project", type=str, default="structural-variant-detection", help="Weights & Biases project name.")
+    parser.add_argument("--wandb-run-name", dest="wandb_run_name", type=str, default=None, help="Optional Weights & Biases run name.")
+    # fmt: on
 
     return parser.parse_args()
 

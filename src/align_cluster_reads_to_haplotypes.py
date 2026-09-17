@@ -56,50 +56,14 @@ def parse_args() -> argparse.Namespace:
             "used at once is approximately --jobs * --minimap2-threads."
         )
     )
-    parser.add_argument(
-        "cluster_dir",
-        help=(
-            "Directory containing per-cluster k-mer prefilter outputs. Each "
-            "cluster should contain cluster_reads.fasta and hap_fastas/*.fasta."
-        ),
-    )
-    parser.add_argument(
-        "--preset",
-        default="map-hifi",
-        help=(
-            "minimap2 -x preset. Default: map-hifi. Short aliases hifi and ont "
-            "are accepted and converted to map-hifi and map-ont."
-        ),
-    )
-    parser.add_argument(
-        "--jobs",
-        type=int,
-        default=8,
-        help=(
-            "Number of minimap2 alignment jobs to run concurrently. Total "
-            "minimap2 CPU threads/processes is --jobs * --minimap2-threads. "
-            "Default: 8."
-        ),
-    )
-    parser.add_argument(
-        "--minimap2-threads",
-        type=int,
-        default=4,
-        help=(
-            "Threads passed to each minimap2 process with -t. Total minimap2 "
-            "CPU threads/processes is --jobs * --minimap2-threads. Default: 4."
-        ),
-    )
-    parser.add_argument(
-        "--output-subdir",
-        default="hap_bams",
-        help="Subdirectory created under each cluster for BAM output. Default: hap_bams.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Regenerate BAMs even when both BAM and BAI already exist.",
-    )
+    # fmt: off
+    parser.add_argument("cluster_dir", help="Directory containing per-cluster k-mer prefilter outputs. Each cluster should contain cluster_reads.fasta and hap_fastas/*.fasta.")
+    parser.add_argument("--preset", default="map-hifi", help="minimap2 -x preset. Default: map-hifi. Short aliases hifi and ont are accepted and converted to map-hifi and map-ont.")
+    parser.add_argument("--jobs", type=int, default=8, help="Number of minimap2 alignment jobs to run concurrently. Total minimap2 CPU threads/processes is --jobs * --minimap2-threads. Default: 8.")
+    parser.add_argument("--minimap2-threads", type=int, default=4, help="Threads passed to each minimap2 process with -t. Total minimap2 CPU threads/processes is --jobs * --minimap2-threads. Default: 4.")
+    parser.add_argument("--output-subdir", default="hap_bams", help="Subdirectory created under each cluster for BAM output. Default: hap_bams.")
+    parser.add_argument("--overwrite", action="store_true", help="Regenerate BAMs even when both BAM and BAI already exist.")
+    # fmt: on
     return parser.parse_args()
 
 

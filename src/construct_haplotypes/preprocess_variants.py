@@ -65,15 +65,10 @@ def build_parser() -> ArgumentParser:
     parser = ArgumentParser(
         description="Keep INS/DEL records from a VCF and regenerate IDs as <chrom>.<type>.<index>."
     )
-    parser.add_argument(
-        "--variant-file-path", dest="variant_file_path", required=True, help="Input VCF"
-    )
-    parser.add_argument(
-        "--output-variant-file-path",
-        dest="output_variant_file_path",
-        required=True,
-        help="Output preprocessed VCF",
-    )
+    # fmt: off
+    parser.add_argument("--variant-file-path", dest="variant_file_path", required=True, help="Input VCF")
+    parser.add_argument("--output-variant-file-path", dest="output_variant_file_path", required=True, help="Output preprocessed VCF")
+    # fmt: on
     return parser
 
 

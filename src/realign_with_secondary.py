@@ -231,52 +231,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract one sequence per read from an original BAM over the cluster encoded in a constructed-contig FASTA name, then realign those reads to the constructed contigs with minimap2 secondary alignments enabled."
     )
-    parser.add_argument(
-        "--fasta", dest="fasta_path", required=True, help="Constructed contig FASTA"
-    )
-    parser.add_argument(
-        "--bam", dest="bam_file", required=True, help="Original read alignment BAM"
-    )
-    parser.add_argument(
-        "--output-directory",
-        dest="output_directory",
-        default=".",
-        help="Output directory (default: current directory)",
-    )
-    parser.add_argument(
-        "--threads", "-t", type=int, default=1, help="Threads for minimap2 and sorting"
-    )
-    parser.add_argument(
-        "--minimap2",
-        dest="minimap2_executable",
-        default="minimap2",
-        help="Path to minimap2 executable",
-    )
-    parser.add_argument(
-        "--preset",
-        "-x",
-        default="map-hifi",
-        help="minimap2 -x preset (default: map-hifi)",
-    )
-    parser.add_argument(
-        "--soft-clip-supplementary",
-        action="store_true",
-        help="Add minimap2 -Y to soft-clip supplementary alignments",
-    )
-    parser.add_argument(
-        "--keep-reads",
-        action="store_true",
-        help="Keep the intermediate deduplicated reads FASTA",
-    )
-    parser.add_argument(
-        "--no-index", action="store_true", help="Do not create a BAM index"
-    )
-    parser.add_argument(
-        "--temporary-directory",
-        dest="temporary_directory",
-        default=None,
-        help="Directory for temporary SAM files (default: output directory)",
-    )
+    # fmt: off
+    parser.add_argument("--fasta", dest="fasta_path", required=True, help="Constructed contig FASTA")
+    parser.add_argument("--bam", dest="bam_file", required=True, help="Original read alignment BAM")
+    parser.add_argument("--output-directory", dest="output_directory", default=".", help="Output directory (default: current directory)")
+    parser.add_argument("--threads", "-t", type=int, default=1, help="Threads for minimap2 and sorting")
+    parser.add_argument("--minimap2", dest="minimap2_executable", default="minimap2", help="Path to minimap2 executable")
+    parser.add_argument("--preset", "-x", default="map-hifi", help="minimap2 -x preset (default: map-hifi)")
+    parser.add_argument("--soft-clip-supplementary", action="store_true", help="Add minimap2 -Y to soft-clip supplementary alignments")
+    parser.add_argument("--keep-reads", action="store_true", help="Keep the intermediate deduplicated reads FASTA")
+    parser.add_argument("--no-index", action="store_true", help="Do not create a BAM index")
+    parser.add_argument("--temporary-directory", dest="temporary_directory", default=None, help="Directory for temporary SAM files (default: output directory)")
+    # fmt: on
     return parser
 
 

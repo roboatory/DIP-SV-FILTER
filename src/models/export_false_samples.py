@@ -170,75 +170,18 @@ def parse_args() -> argparse.Namespace:
         description="Export misclassified samples for train/validation/test splits."
     )
 
-    parser.add_argument(
-        "--checkpoint-file-path",
-        "--checkpoint_file_path",
-        type=Path,
-        required=True,
-        help="Path to the trained model checkpoint.",
-    )
-    parser.add_argument(
-        "--train-directory",
-        "--train_directory",
-        type=Path,
-        required=True,
-        help="Directory of training .npy files.",
-    )
-    parser.add_argument(
-        "--validation-directory",
-        "--validation_directory",
-        type=Path,
-        required=True,
-        help="Directory of validation .npy files.",
-    )
-    parser.add_argument(
-        "--test-directory",
-        "--test_directory",
-        type=Path,
-        required=True,
-        help="Directory of test .npy files.",
-    )
-    parser.add_argument(
-        "--labels-file-path",
-        "--labels_file_path",
-        type=Path,
-        default=None,
-        help="Optional shared labels file path. If omitted, the script resolves labels per split.",
-    )
-    parser.add_argument(
-        "--output-directory",
-        "--output_directory",
-        type=Path,
-        required=True,
-        help="Directory to write TSV outputs.",
-    )
-    parser.add_argument(
-        "--batch-size",
-        "--batch_size",
-        type=int,
-        default=64,
-        help="Inference batch size.",
-    )
-    parser.add_argument(
-        "--num-workers",
-        "--num_workers",
-        type=int,
-        default=0,
-        help="DataLoader worker processes.",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=get_default_device_name(),
-        help="Inference device, for example cpu, mps, or cuda.",
-    )
-    parser.add_argument(
-        "--prediction-threshold",
-        "--prediction_threshold",
-        type=float,
-        default=0.5,
-        help="Threshold for converting probabilities into binary predictions.",
-    )
+    # fmt: off
+    parser.add_argument("--checkpoint-file-path", "--checkpoint_file_path", type=Path, required=True, help="Path to the trained model checkpoint.")
+    parser.add_argument("--train-directory", "--train_directory", type=Path, required=True, help="Directory of training .npy files.")
+    parser.add_argument("--validation-directory", "--validation_directory", type=Path, required=True, help="Directory of validation .npy files.")
+    parser.add_argument("--test-directory", "--test_directory", type=Path, required=True, help="Directory of test .npy files.")
+    parser.add_argument("--labels-file-path", "--labels_file_path", type=Path, default=None, help="Optional shared labels file path. If omitted, the script resolves labels per split.")
+    parser.add_argument("--output-directory", "--output_directory", type=Path, required=True, help="Directory to write TSV outputs.")
+    parser.add_argument("--batch-size", "--batch_size", type=int, default=64, help="Inference batch size.")
+    parser.add_argument("--num-workers", "--num_workers", type=int, default=0, help="DataLoader worker processes.")
+    parser.add_argument("--device", type=str, default=get_default_device_name(), help="Inference device, for example cpu, mps, or cuda.")
+    parser.add_argument("--prediction-threshold", "--prediction_threshold", type=float, default=0.5, help="Threshold for converting probabilities into binary predictions.")
+    # fmt: on
     return parser.parse_args()
 
 

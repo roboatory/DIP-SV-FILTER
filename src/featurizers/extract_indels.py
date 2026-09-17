@@ -501,60 +501,16 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="insertion & deletion signature extraction using CUTE-SV heuristics"
     )
-    parser.add_argument(
-        "-b",
-        "--bam",
-        dest="bam_file",
-        default="data/HG002_chr21.bam",
-        help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)",
-    )
-    parser.add_argument(
-        "-c",
-        "--chromosomes",
-        default="chr21",
-        help="limits signature extraction to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)",
-    )
-    parser.add_argument(
-        "-d",
-        "--bed",
-        default="output/bed",
-        help="output BED directory (default: output/bed)",
-    )
-    parser.add_argument(
-        "-f",
-        "--format",
-        dest="encoding_format",
-        default="counts",
-        choices=["counts", "plot"],
-        help="model input options (default: counts)",
-    )
-    parser.add_argument(
-        "-i",
-        "--images",
-        default="output/images",
-        help="output image directory (default: output/images)",
-    )
-    parser.add_argument(
-        "-n",
-        "--normalize",
-        action="store_true",
-        help="normalize matrices to a fixed width and height",
-    )
-    parser.add_argument(
-        "-t",
-        "--type",
-        dest="variant_type",
-        default="DEL",
-        choices=["DEL", "INS"],
-        help="structural variant type (default: DEL)",
-    )
-    parser.add_argument(
-        "-v",
-        "--vcf",
-        dest="variant_file_path",
-        default="data/labeling_test/HG002_variants.vcf",
-        help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)",
-    )
+    # fmt: off
+    parser.add_argument("-b", "--bam", dest="bam_file", default="data/HG002_chr21.bam", help="user-supplied BAM file; use the keyword 'all' for the entire genome (default: data/HG002_chr21.bam)")
+    parser.add_argument("-c", "--chromosomes", default="chr21", help="limits signature extraction to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)")
+    parser.add_argument("-d", "--bed", default="output/bed", help="output BED directory (default: output/bed)")
+    parser.add_argument("-f", "--format", dest="encoding_format", default="counts", choices=["counts", "plot"], help="model input options (default: counts)")
+    parser.add_argument("-i", "--images", default="output/images", help="output image directory (default: output/images)")
+    parser.add_argument("-n", "--normalize", action="store_true", help="normalize matrices to a fixed width and height")
+    parser.add_argument("-t", "--type", dest="variant_type", default="DEL", choices=["DEL", "INS"], help="structural variant type (default: DEL)")
+    parser.add_argument("-v", "--vcf", dest="variant_file_path", default="data/labeling_test/HG002_variants.vcf", help="user-supplied VCF file (default: data/labeling_test/HG002_variants.vcf)")
+    # fmt: on
 
     return parser.parse_args()
 

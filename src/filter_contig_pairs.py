@@ -1216,104 +1216,26 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="High-recall read-local k-mer prefilter for pseudo-haplotype pairs. Input FASTA can be one cluster FASTA or a directory of cluster FASTAs."
     )
-    parser.add_argument(
-        "--fasta",
-        dest="fasta_path",
-        required=True,
-        help="Pseudo-haplotype FASTA file or directory",
-    )
-    parser.add_argument(
-        "--bam", dest="bam_file", required=True, help="Original reference-aligned BAM"
-    )
-    parser.add_argument(
-        "--output-directory",
-        dest="output_directory",
-        required=True,
-        help="Output directory",
-    )
+    # fmt: off
+    parser.add_argument("--fasta", dest="fasta_path", required=True, help="Pseudo-haplotype FASTA file or directory")
+    parser.add_argument("--bam", dest="bam_file", required=True, help="Original reference-aligned BAM")
+    parser.add_argument("--output-directory", dest="output_directory", required=True, help="Output directory")
     parser.add_argument("--k", type=int, default=21, help="k-mer length (default: 21)")
-    parser.add_argument(
-        "--structural-variant-window",
-        dest="structural_variant_window",
-        type=int,
-        default=250,
-        help="Sequence flank around SV interval for state k-mers",
-    )
-    parser.add_argument(
-        "--query-flank",
-        type=int,
-        default=3000,
-        help="Query flank around localized cluster interval",
-    )
-    parser.add_argument(
-        "--minimum-information-kmers",
-        dest="minimum_information_kmers",
-        type=int,
-        default=5,
-        help="Minimum informative k-mers required per read",
-    )
-    parser.add_argument(
-        "--large-insertion-threshold",
-        dest="large_insertion_threshold",
-        type=int,
-        default=50,
-        help="Large insertion CIGAR threshold",
-    )
-    parser.add_argument(
-        "--soft-clip-threshold",
-        dest="soft_clip_threshold",
-        type=int,
-        default=50,
-        help="Large soft-clip CIGAR threshold",
-    )
-    parser.add_argument(
-        "--absent-weight",
-        type=float,
-        default=0.5,
-        help="Weight for absent/reference evidence",
-    )
-    parser.add_argument(
-        "--present-weight",
-        type=float,
-        default=1.0,
-        help="Weight for present/ALT evidence",
-    )
-    parser.add_argument(
-        "--prefilter-pair-threshold",
-        type=int,
-        default=30,
-        help="Bypass prefilter at or below this pair count",
-    )
-    parser.add_argument(
-        "--keep-top-pairs",
-        type=int,
-        default=30,
-        help="Number of top scored pairs to retain after prefiltering",
-    )
-    parser.add_argument(
-        "--homopolymer-compress",
-        action="store_true",
-        help="Apply homopolymer compression before k-mer extraction",
-    )
-    parser.add_argument(
-        "--no-canonical",
-        action="store_true",
-        help="Do not canonicalize reverse-complement k-mers",
-    )
-    parser.add_argument(
-        "--keep-low-complexity", action="store_true", help="Keep low-complexity k-mers"
-    )
-    parser.add_argument(
-        "--write-read-evidence",
-        action="store_true",
-        help="Write long-form read evidence TSV",
-    )
-    parser.add_argument(
-        "--threads",
-        type=int,
-        default=1,
-        help="Number of cluster-level worker processes",
-    )
+    parser.add_argument("--structural-variant-window", dest="structural_variant_window", type=int, default=250, help="Sequence flank around SV interval for state k-mers")
+    parser.add_argument("--query-flank", type=int, default=3000, help="Query flank around localized cluster interval")
+    parser.add_argument("--minimum-information-kmers", dest="minimum_information_kmers", type=int, default=5, help="Minimum informative k-mers required per read")
+    parser.add_argument("--large-insertion-threshold", dest="large_insertion_threshold", type=int, default=50, help="Large insertion CIGAR threshold")
+    parser.add_argument("--soft-clip-threshold", dest="soft_clip_threshold", type=int, default=50, help="Large soft-clip CIGAR threshold")
+    parser.add_argument("--absent-weight", type=float, default=0.5, help="Weight for absent/reference evidence")
+    parser.add_argument("--present-weight", type=float, default=1.0, help="Weight for present/ALT evidence")
+    parser.add_argument("--prefilter-pair-threshold", type=int, default=30, help="Bypass prefilter at or below this pair count")
+    parser.add_argument("--keep-top-pairs", type=int, default=30, help="Number of top scored pairs to retain after prefiltering")
+    parser.add_argument("--homopolymer-compress", action="store_true", help="Apply homopolymer compression before k-mer extraction")
+    parser.add_argument("--no-canonical", action="store_true", help="Do not canonicalize reverse-complement k-mers")
+    parser.add_argument("--keep-low-complexity", action="store_true", help="Keep low-complexity k-mers")
+    parser.add_argument("--write-read-evidence", action="store_true", help="Write long-form read evidence TSV")
+    parser.add_argument("--threads", type=int, default=1, help="Number of cluster-level worker processes")
+    # fmt: on
     return parser
 
 

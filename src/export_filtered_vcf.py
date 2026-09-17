@@ -47,72 +47,18 @@ def parse_args() -> argparse.Namespace:
             "export the final filtered callset."
         )
     )
-    parser.add_argument(
-        "--cluster-dir",
-        type=Path,
-        required=True,
-        help="Root directory containing per-cluster pair_classification.tsv files.",
-    )
-    parser.add_argument(
-        "--input-vcf", type=Path, required=True, help="Original input VCF."
-    )
-    parser.add_argument(
-        "--output-vcf", type=Path, required=True, help="Filtered output VCF."
-    )
-    parser.add_argument(
-        "--decision-tsv",
-        type=Path,
-        help="Optional audit TSV describing the decision for each input VCF record.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing output VCF and decision TSV.",
-    )
-    parser.add_argument(
-        "--keep-absent-genotypes",
-        action="store_true",
-        help=(
-            "Keep evaluated variants whose final genotype is 0/0 in the output "
-            "VCF. By default these records are filtered out."
-        ),
-    )
-    parser.add_argument(
-        "--max-present-ins-allele-score",
-        type=float,
-        default=1.0,
-        help=(
-            "Gate original present INS alleles with residual score above this "
-            "threshold to 0. Default: 1.0, effectively disabled for sigmoid scores."
-        ),
-    )
-    parser.add_argument(
-        "--max-present-del-allele-score",
-        type=float,
-        default=1.0,
-        help=(
-            "Gate original present DEL alleles with residual score above this "
-            "threshold to 0. Default: 1.0, effectively disabled for sigmoid scores."
-        ),
-    )
-    parser.add_argument(
-        "--min-absent-ins-allele-score",
-        type=float,
-        default=1.0,
-        help=(
-            "Rescue original absent INS alleles with residual score at or above "
-            "this threshold to 1. Default: 1.0, effectively disabled for sigmoid scores."
-        ),
-    )
-    parser.add_argument(
-        "--min-absent-del-allele-score",
-        type=float,
-        default=1.0,
-        help=(
-            "Rescue original absent DEL alleles with residual score at or above "
-            "this threshold to 1. Default: 1.0, effectively disabled for sigmoid scores."
-        ),
-    )
+    # fmt: off
+    parser.add_argument("--cluster-dir", type=Path, required=True, help="Root directory containing per-cluster pair_classification.tsv files.")
+    parser.add_argument("--input-vcf", type=Path, required=True, help="Original input VCF.")
+    parser.add_argument("--output-vcf", type=Path, required=True, help="Filtered output VCF.")
+    parser.add_argument("--decision-tsv", type=Path, help="Optional audit TSV describing the decision for each input VCF record.")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output VCF and decision TSV.")
+    parser.add_argument("--keep-absent-genotypes", action="store_true", help="Keep evaluated variants whose final genotype is 0/0 in the output VCF. By default these records are filtered out.")
+    parser.add_argument("--max-present-ins-allele-score", type=float, default=1.0, help="Gate original present INS alleles with residual score above this threshold to 0. Default: 1.0, effectively disabled for sigmoid scores.")
+    parser.add_argument("--max-present-del-allele-score", type=float, default=1.0, help="Gate original present DEL alleles with residual score above this threshold to 0. Default: 1.0, effectively disabled for sigmoid scores.")
+    parser.add_argument("--min-absent-ins-allele-score", type=float, default=1.0, help="Rescue original absent INS alleles with residual score at or above this threshold to 1. Default: 1.0, effectively disabled for sigmoid scores.")
+    parser.add_argument("--min-absent-del-allele-score", type=float, default=1.0, help="Rescue original absent DEL alleles with residual score at or above this threshold to 1. Default: 1.0, effectively disabled for sigmoid scores.")
+    # fmt: on
     return parser.parse_args()
 
 

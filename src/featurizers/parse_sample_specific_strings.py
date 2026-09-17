@@ -191,42 +191,14 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="sample-specific string (SFS) analysis"
     )
-    parser.add_argument(
-        "-c",
-        "--chromosomes",
-        default="chr21",
-        help="limits SFS analysis to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)",
-    )
-    parser.add_argument(
-        "-d",
-        "--bed",
-        default="data/bed",
-        help="path to variant BED directory (default: data/bed)",
-    )
-    parser.add_argument(
-        "-f",
-        "--fragments",
-        default="data/fragments",
-        help="output location for SFS binned by chromosomal variant (default: data/fragments)",
-    )
-    parser.add_argument(
-        "-g",
-        "--generate_index",
-        action="store_true",
-        help="generate a .index file for fast lookup",
-    )
-    parser.add_argument(
-        "-i",
-        "--images",
-        default="data/fragment-images",
-        help="output image directory (default: data/fragment-images)",
-    )
-    parser.add_argument(
-        "-s",
-        "--signatures",
-        default="data/SFS_signatures.txt",
-        help="path to .txt file containing the extracted SFS (default: data/SFS_signatures.txt)",
-    )
+    # fmt: off
+    parser.add_argument("-c", "--chromosomes", default="chr21", help="limits SFS analysis to particular chromosomes; specify as a comma separated list or using the keyword 'all' for the entire genome (default: chr21)")
+    parser.add_argument("-d", "--bed", default="data/bed", help="path to variant BED directory (default: data/bed)")
+    parser.add_argument("-f", "--fragments", default="data/fragments", help="output location for SFS binned by chromosomal variant (default: data/fragments)")
+    parser.add_argument("-g", "--generate_index", action="store_true", help="generate a .index file for fast lookup")
+    parser.add_argument("-i", "--images", default="data/fragment-images", help="output image directory (default: data/fragment-images)")
+    parser.add_argument("-s", "--signatures", default="data/SFS_signatures.txt", help="path to .txt file containing the extracted SFS (default: data/SFS_signatures.txt)")
+    # fmt: on
 
     return parser.parse_args()
 

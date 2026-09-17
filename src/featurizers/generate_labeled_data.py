@@ -1,18 +1,13 @@
 from collections import defaultdict
-
-import numpy as np
-import pysam
-
-from utils import parse_variant_records
-
-if __package__:
-    from .extract_features import encode_region
-else:
-    from extract_features import encode_region
 from multiprocessing.pool import Pool
 from pathlib import Path
 
+import numpy as np
+import pysam
 import tqdm
+
+from featurizers.extract_features import encode_region
+from utils import parse_variant_records
 
 pysam.set_verbosity(0)
 
@@ -445,31 +440,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate labeled data for SV filtering"
     )
+    # fmt: off
     parser.add_argument("--bam", dest="bam_file", required=True, help="Input BAM file")
-    parser.add_argument(
-        "--vcf",
-        dest="variant_file_path",
-        required=True,
-        help="Input VCF file with SV calls",
-    )
-    parser.add_argument(
-        "--fai",
-        dest="reference_index_path",
-        required=True,
-        help="FAI index file for the reference genome",
-    )
-    parser.add_argument(
-        "--output-directory",
-        dest="output_directory",
-        required=True,
-        help="Directory to save the output feature files and labels",
-    )
-    parser.add_argument(
-        "--threads",
-        type=int,
-        default=4,
-        help="Number of threads for parallel processing",
-    )
+    parser.add_argument("--vcf", dest="variant_file_path", required=True, help="Input VCF file with SV calls")
+    parser.add_argument("--fai", dest="reference_index_path", required=True, help="FAI index file for the reference genome")
+    parser.add_argument("--output-directory", dest="output_directory", required=True, help="Directory to save the output feature files and labels")
+    parser.add_argument("--threads", type=int, default=4, help="Number of threads for parallel processing")
+    # fmt: on
     arguments = parser.parse_args()
 
     main(

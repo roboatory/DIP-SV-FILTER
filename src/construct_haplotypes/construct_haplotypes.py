@@ -427,22 +427,12 @@ if __name__ == "__main__":
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-    parser.add_argument(
-        "--variant-file-path", dest="variant_file_path", help="SORTED VCF"
-    )
-    parser.add_argument(
-        "--output-directory", dest="output_directory", help="Output directory"
-    )
-    parser.add_argument(
-        "--flank",
-        "-f",
-        default=5000,
-        type=int,
-        help="length of flanking reference sequence",
-    )
-    parser.add_argument(
-        "--reference-file-path", dest="reference_file_path", help="reference file"
-    )
+    # fmt: off
+    parser.add_argument("--variant-file-path", dest="variant_file_path", help="SORTED VCF")
+    parser.add_argument("--output-directory", dest="output_directory", help="Output directory")
+    parser.add_argument("--flank", "-f", default=5000, type=int, help="length of flanking reference sequence")
+    parser.add_argument("--reference-file-path", dest="reference_file_path", help="reference file")
+    # fmt: on
 
     arguments = parser.parse_args()
 

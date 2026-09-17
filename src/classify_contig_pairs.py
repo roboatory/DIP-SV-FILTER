@@ -111,48 +111,16 @@ def parse_args() -> argparse.Namespace:
             "pair_classification.tsv files for downstream VCF export."
         )
     )
-    parser.add_argument(
-        "--model", type=Path, required=True, help="PyTorch model checkpoint."
-    )
-    parser.add_argument(
-        "--cluster-dir",
-        type=Path,
-        required=True,
-        help="Root directory containing all k-mer prefilter cluster directories.",
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=64, help="Inference batch size. Default: 64."
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=0,
-        help="PyTorch DataLoader worker processes. Default: 0.",
-    )
-    parser.add_argument(
-        "--device",
-        default=get_default_device_name(),
-        help="Inference device, for example cuda or cpu. Default: automatically detected.",
-    )
-    parser.add_argument(
-        "--feature-subdir",
-        default="pair_target_windows",
-        help="Per-cluster targeted feature subdirectory. Default: pair_target_windows.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing pair_classification.tsv files.",
-    )
-    parser.add_argument(
-        "--top-subwindow-fraction",
-        type=float,
-        default=0.5,
-        help=(
-            "Fraction of the highest focused subwindow scores used to summarize "
-            "each SV-haplotype score, with the count rounded up. Default: 0.5."
-        ),
-    )
+    # fmt: off
+    parser.add_argument("--model", type=Path, required=True, help="PyTorch model checkpoint.")
+    parser.add_argument("--cluster-dir", type=Path, required=True, help="Root directory containing all k-mer prefilter cluster directories.")
+    parser.add_argument("--batch-size", type=int, default=64, help="Inference batch size. Default: 64.")
+    parser.add_argument("--num-workers", type=int, default=0, help="PyTorch DataLoader worker processes. Default: 0.")
+    parser.add_argument("--device", default=get_default_device_name(), help="Inference device, for example cuda or cpu. Default: automatically detected.")
+    parser.add_argument("--feature-subdir", default="pair_target_windows", help="Per-cluster targeted feature subdirectory. Default: pair_target_windows.")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing pair_classification.tsv files.")
+    parser.add_argument("--top-subwindow-fraction", type=float, default=0.5, help="Fraction of the highest focused subwindow scores used to summarize each SV-haplotype score, with the count rounded up. Default: 0.5.")
+    # fmt: on
     return parser.parse_args()
 
 

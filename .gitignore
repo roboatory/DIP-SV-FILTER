@@ -17,6 +17,7 @@ wandb/
 /models/
 
 /plans/
+/submit.slurm
 
 # Local agent instructions and configuration
 AGENTS.md

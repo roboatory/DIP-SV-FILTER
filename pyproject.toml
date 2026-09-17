@@ -32,7 +32,7 @@ py-modules = [
     "utils",
     "filter_contig_pairs",
     "realign_with_secondary",
-    "align_cluster_reads_to_haps",
+    "align_cluster_reads_to_haplotypes",
     "encode_pair_target_windows",
     "classify_contig_pairs",
     "export_filtered_vcf",
